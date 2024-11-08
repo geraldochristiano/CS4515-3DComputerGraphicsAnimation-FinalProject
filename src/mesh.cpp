@@ -60,6 +60,7 @@ GPUMesh::GPUMesh(const Mesh& cpuMesh)
     std::cout << glm::to_string(gpuMaterial.ks) << std::endl;
     std::cout << gpuMaterial.shininess << std::endl;
     std::cout << gpuMaterial.transparency << std::endl;
+    std::cout << m_hasTextureCoords << std::endl;
 }
 
 GPUMesh::GPUMesh(GPUMesh&& other)

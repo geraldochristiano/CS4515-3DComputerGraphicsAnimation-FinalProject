@@ -99,7 +99,7 @@ ShaderBuilder& ShaderBuilder::addStage(GLuint shaderStage, std::filesystem::path
             shaderSource.replace(from, 16, prependedString + "\n");
         }
     }
-
+    //std::cout << shaderSource << std::endl;
     const GLuint shader = glCreateShader(shaderStage);
     const char* shaderSourcePtr = shaderSource.c_str();
     glShaderSource(shader, 1, &shaderSourcePtr, nullptr);

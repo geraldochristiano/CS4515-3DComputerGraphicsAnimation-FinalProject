@@ -7,6 +7,8 @@ DISABLE_WARNINGS_PUSH()
 #include <glm/gtc/quaternion.hpp>
 DISABLE_WARNINGS_POP()
 
+#include <imgui/imgui.h>
+
 Camera::Camera(Window* pWindow, glm::mat4 projectionMatrix)
     : Camera(pWindow, glm::vec3(0), glm::vec3(0, 0, -1), projectionMatrix)
 {
@@ -69,28 +71,32 @@ void Camera::updateInput()
     if (m_userInteraction) {
         glm::vec3 localMoveDelta{ 0 };
         const glm::vec3 right = glm::normalize(glm::cross(m_forward, m_up));
+        const float movementMultiplier = m_pWindow->isKeyPressed(GLFW_KEY_LEFT_SHIFT) ? 0.1 : 1;
         if (m_pWindow->isKeyPressed(GLFW_KEY_A))
-            m_position -= moveSpeed * right;
+            m_position -= moveSpeed * right * movementMultiplier;
         if (m_pWindow->isKeyPressed(GLFW_KEY_D))
-            m_position += moveSpeed * right;
+            m_position += moveSpeed * right * movementMultiplier;
         if (m_pWindow->isKeyPressed(GLFW_KEY_W))
-            m_position += moveSpeed * m_forward;
+            m_position += moveSpeed * m_forward * movementMultiplier;
         if (m_pWindow->isKeyPressed(GLFW_KEY_S))
-            m_position -= moveSpeed * m_forward;
+            m_position -= moveSpeed * m_forward * movementMultiplier;
         if (m_pWindow->isKeyPressed(GLFW_KEY_R))
-            m_position += moveSpeed * m_up;
+            m_position += moveSpeed * m_up * movementMultiplier;
         if (m_pWindow->isKeyPressed(GLFW_KEY_F))
-            m_position -= moveSpeed * m_up;
+            m_position -= moveSpeed * m_up * movementMultiplier;
 
         const glm::dvec2 cursorPos = m_pWindow->getCursorPos();
         const glm::vec2 delta = lookSpeed * glm::vec2(cursorPos - m_prevCursorPos);
         m_prevCursorPos = cursorPos;
 
-        if (m_pWindow->isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
-            if (delta.x != 0.0f)
-                rotateY(delta.x);
-            if (delta.y != 0.0f)
-                rotateX(delta.y);
+        ImGuiIO io = ImGui::GetIO();
+        if (!io.WantCaptureMouse) {
+            if (m_pWindow->isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
+                if (delta.x != 0.0f)
+                    rotateY(delta.x);
+                if (delta.y != 0.0f)
+                    rotateX(delta.y);
+            }
         }
     }
     else {

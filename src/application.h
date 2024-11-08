@@ -65,27 +65,26 @@ struct SpotLight : Light {
     glm::vec3 position;
     glm::vec3 direction;
     glm::vec2 attenuationCoefficients;
-    float innerConeCutoffAngle;
-    float outerConeCutoffAngle;
+    float innerCutoffAngle;
+    float outerCutoffAngle;
 
     SpotLight(const glm::vec3& pos,
         const glm::vec3& dir,
-        const float& innerConeCutoff,
-        const float& outerConeCutoff,
+        const float& innerCutoff,
+        const float& outerCutoff,
         const glm::vec3& diffuse,
         const glm::vec3& specular,
         const float& maxDistance)
         : position(pos)
         , direction(dir)
         , attenuationCoefficients(utils::math::getAttenuationCoefficient(maxDistance))
-        , innerConeCutoffAngle(innerConeCutoff)
-        , outerConeCutoffAngle(outerConeCutoff)
+        , innerCutoffAngle(innerCutoff)
+        , outerCutoffAngle(outerCutoff)
     {
         diffuseColor = diffuse;
         specularColor = specular;
     }
 };
-
 
 
 enum class MeshMovement {
@@ -99,11 +98,16 @@ public:
 
     void initMeshes();
     void initShaders();
-    void initBuffers();
+    void initBezierPath();
     void initSkybox();
     void initLights();
+    void initHierarchyTransform();
 
+    void drawScene();
     void drawSkybox();
+    void drawBezierPath();
+    void updateBezierLightPosition();
+    void updateHierarchyTransform();
     void update();
 
     void onKeyPressed(int key, int mods);
@@ -115,30 +119,39 @@ public:
 private:
     Window m_window;
 
-    //Shader m_defaultShader;
     Shader m_lightShader;
     Shader m_shadowShader;
     Shader m_skyboxShader;
     Shader m_blinnOrPhongPointLightShader;
     Shader m_blinnOrPhongDirLightShader;
     Shader m_blinnOrPhongSpotLightShader;
+    Shader m_bezierPathShader;
 
     Texture m_texture;
     bool m_useMaterial{ true };
     
-    std::vector < std::tuple<GPUMesh, MeshMovement, glm::mat4> > m_renderable;
+    using DiffuseMapTex = std::optional<Texture>;
+    using NormalMapTex = std::optional<Texture>;
+    std::vector < std::tuple<GPUMesh, glm::mat4, DiffuseMapTex, NormalMapTex> > m_renderable;
+
     std::vector<PointLight> m_pointLights;
     std::vector<SpotLight> m_spotLights;
     DirectionalLight m_sunLight;
-    PointLight m_bezierPathLight;
 
     Camera m_mainCamera;
     Camera m_minimapCamera;
+
+    // Bezier path
+    GLuint m_bezierPathVAO;
+    GLuint m_bezierPathVBO;
 
     // Skybox
     GLuint m_skyboxVAO;
     GLuint m_skyboxVBO;
     GLuint m_skyboxTex;
 
+    // Hierarchical transform
+    std::tuple<GPUMesh, glm::mat4, DiffuseMapTex, NormalMapTex>* sun;
+    std::tuple<GPUMesh, glm::mat4, DiffuseMapTex, NormalMapTex>* planet1;
 
 };

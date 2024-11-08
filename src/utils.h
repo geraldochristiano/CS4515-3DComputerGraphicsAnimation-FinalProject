@@ -25,12 +25,48 @@ namespace utils {
             const int MAX_NUM_SPOT_LIGHT = 4;
         }
 
+        const float lightPointSize = 15.0f;
         ShadingModel currentShadingModel = ShadingModel::BLINN_OR_PHONG;
         bool showLightsAsPoints = true;
+        bool useBlinnCorrection = false;
+        bool useDiffuseMap = true;
+        bool useNormalMap = true;
+
+        namespace bezier_path {
+            const int frameCount = 360; // How many frames taken to do a full cubic bezier curve
+
+            //const std::vector < glm::vec3 > control_points{
+            //    { 3, 1, -1 }
+            //    , { 2.5, 5,-1 }
+            //    , { 2, 5, 1 }
+            //    , { 1.5, 1, 1 }
+            //    , { 1, -5, 1}
+            //    , { 0.5, -5, -1}
+            //    , { 0, 1, -1 }
+            //};
+
+            //const int curveCount = 2;
+
+            //float timestep = 0;
+
+            const glm::vec3 control_point0{ 3, 1, -2};
+            const glm::vec3 control_point1{ 2.5, 5,-2 };
+            const glm::vec3 control_point2{ 2, 5, 2 };
+            const glm::vec3 control_point3{ 1.5, 1, 2 };
+            const glm::vec3 control_point4{ 1, -5, 2 };
+            const glm::vec3 control_point5{ 0.5, -5, -2 };
+            const glm::vec3 control_point6{ 0, 1, -2 };
+            const glm::vec3 control_point7{-0.5, 5, -2};
+            const glm::vec3 control_point8{-1, 5, 2};
+            const glm::vec3 control_point9{-1.5, 1, 2};
+
+            const int curveCount = 3;
+
+            float timestep = 0;
+        }
     }
 
     namespace math {
-
         glm::vec2 getAttenuationCoefficient(float maxDistance) {
             if (maxDistance <= 7.0)
                 return { 0.7, 1.8 };
@@ -65,7 +101,6 @@ namespace utils {
             return (it * it * it * p0) + (3 * t * it * it * p1) + (3 * t * t * it * p2) + (t * t * t * p3);
         }
     }
-
 
     static constexpr float skyboxVertices[] = {
         // Negative Z-axis: back
