@@ -87,13 +87,19 @@ ShaderBuilder::~ShaderBuilder()
     freeShaders();
 }
 
-ShaderBuilder& ShaderBuilder::addStage(GLuint shaderStage, std::filesystem::path shaderFile)
+ShaderBuilder& ShaderBuilder::addStage(GLuint shaderStage, std::filesystem::path shaderFile, const std::string& prependedString)
 {
     if (!std::filesystem::exists(shaderFile)) {
         throw ShaderLoadingException(fmt::format("File {} does not exist", shaderFile.string().c_str()));
     }
 
-    const std::string shaderSource = readFile(shaderFile);
+    std::string shaderSource = readFile(shaderFile);
+    if (!prependedString.empty()) {      
+        if (size_t from = shaderSource.find("//$define_string"); from != std::string::npos) {
+            shaderSource.replace(from, 16, prependedString + "\n");
+        }
+    }
+
     const GLuint shader = glCreateShader(shaderStage);
     const char* shaderSourcePtr = shaderSource.c_str();
     glShaderSource(shader, 1, &shaderSourcePtr, nullptr);

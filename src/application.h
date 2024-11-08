@@ -3,6 +3,7 @@
 #include "mesh.h"
 #include "texture.h"
 #include "camera.h"
+#include "utils.h"
 // Always include window first (because it includes glfw, which includes GL which needs to be included AFTER glew).
 // Can't wait for modules to fix this stuff...
 #include <framework/disable_all_warnings.h>
@@ -28,38 +29,79 @@ DISABLE_WARNINGS_POP()
 struct Light {
     glm::vec3 diffuseColor;
     glm::vec3 specularColor;
-
-    glm::vec3 position;
-
-    Light(const glm::vec3& pos, 
-        const glm::vec3& diffuse = glm::vec3(0.5, 0.5, 0.5), 
-        const glm::vec3& specular = glm::vec3(1, 1, 1))
-        : position(pos)
-        , diffuseColor(diffuse)
-        , specularColor(specular)
-    {}
 };
+
+struct DirectionalLight : Light {
+    glm::vec3 direction;
+
+    DirectionalLight(const glm::vec3& dir,
+        const glm::vec3& diffuse,
+        const glm::vec3& specular)
+        : direction(dir)
+    {
+        diffuseColor = diffuse;
+        specularColor = specular;
+    }
+};
+
+// vec2 attenuation coefficients: first component is linear coefficient, second is quadratic coefficient, constant coefficient is 1.0
+struct PointLight : Light {
+    glm::vec3 position;
+    glm::vec2 attenuationCoefficients;
+
+    PointLight(const glm::vec3& pos,
+        const glm::vec3& diffuse,
+        const glm::vec3& specular,
+        const float& maxDistance)
+        : position(pos)
+        , attenuationCoefficients(utils::math::getAttenuationCoefficient(maxDistance))
+    {
+        diffuseColor = diffuse;
+        specularColor = specular;
+    }
+};
+
+struct SpotLight : Light {
+    glm::vec3 position;
+    glm::vec3 direction;
+    glm::vec2 attenuationCoefficients;
+    float innerConeCutoffAngle;
+    float outerConeCutoffAngle;
+
+    SpotLight(const glm::vec3& pos,
+        const glm::vec3& dir,
+        const float& innerConeCutoff,
+        const float& outerConeCutoff,
+        const glm::vec3& diffuse,
+        const glm::vec3& specular,
+        const float& maxDistance)
+        : position(pos)
+        , direction(dir)
+        , attenuationCoefficients(utils::math::getAttenuationCoefficient(maxDistance))
+        , innerConeCutoffAngle(innerConeCutoff)
+        , outerConeCutoffAngle(outerConeCutoff)
+    {
+        diffuseColor = diffuse;
+        specularColor = specular;
+    }
+};
+
+
 
 enum class MeshMovement {
     Static, 
     Dynamic
 };
 
-struct Renderable {
-    GPUMesh mesh;
-    MeshMovement movementType;
-    int instanceCount;
-    glm::mat4 modelMatrix;
-};
-
 class Application {
 public:
     Application();
 
-    void initScene();
+    void initMeshes();
     void initShaders();
     void initBuffers();
     void initSkybox();
+    void initLights();
 
     void drawSkybox();
     void update();
@@ -73,15 +115,22 @@ public:
 private:
     Window m_window;
 
-    Shader m_defaultShader;
-    Shader m_blinnOrPhongShader;
+    //Shader m_defaultShader;
+    Shader m_lightShader;
     Shader m_shadowShader;
     Shader m_skyboxShader;
+    Shader m_blinnOrPhongPointLightShader;
+    Shader m_blinnOrPhongDirLightShader;
+    Shader m_blinnOrPhongSpotLightShader;
 
     Texture m_texture;
     bool m_useMaterial{ true };
-    std::vector<GPUMesh> m_meshes;
-    std::vector<Light> m_lights;
+    
+    std::vector < std::tuple<GPUMesh, MeshMovement, glm::mat4> > m_renderable;
+    std::vector<PointLight> m_pointLights;
+    std::vector<SpotLight> m_spotLights;
+    DirectionalLight m_sunLight;
+    PointLight m_bezierPathLight;
 
     Camera m_mainCamera;
     Camera m_minimapCamera;
@@ -91,5 +140,5 @@ private:
     GLuint m_skyboxVBO;
     GLuint m_skyboxTex;
 
-    glm::mat4 m_modelMatrix{ 1.0f };
+
 };

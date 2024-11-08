@@ -6,6 +6,8 @@ DISABLE_WARNINGS_POP()
 #include <iostream>
 #include <vector>
 
+#include "glm/gtx/string_cast.hpp"
+
 GPUMaterial::GPUMaterial(const Material& material) :
     kd(material.kd),
     ks(material.ks),
@@ -53,6 +55,11 @@ GPUMesh::GPUMesh(const Mesh& cpuMesh)
 
     // Each triangle has 3 vertices.
     m_numIndices = static_cast<GLsizei>(3 * cpuMesh.triangles.size());
+
+    std::cout << glm::to_string(gpuMaterial.kd) << std::endl;
+    std::cout << glm::to_string(gpuMaterial.ks) << std::endl;
+    std::cout << gpuMaterial.shininess << std::endl;
+    std::cout << gpuMaterial.transparency << std::endl;
 }
 
 GPUMesh::GPUMesh(GPUMesh&& other)

@@ -52,7 +52,7 @@ public:
     ShaderBuilder(ShaderBuilder&&) = default;
     ~ShaderBuilder();
 
-    ShaderBuilder& addStage(GLuint shaderStage, std::filesystem::path shaderFile);
+    ShaderBuilder& addStage(GLuint shaderStage, std::filesystem::path shaderFile, const std::string& prependedString = "");
     Shader build();
 
 private:

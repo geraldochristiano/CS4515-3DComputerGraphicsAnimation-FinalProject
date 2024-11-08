@@ -1,13 +1,16 @@
 #include "application.h"
-#include "utils.h"
+
+#include <imgui/imgui.h>
 
 #include <framework/image.h>
 
 Application::Application()
     : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41)
     , m_texture(RESOURCE_ROOT "resources/checkerboard.png")
-    , m_mainCamera(&m_window, glm::vec3(0,0,-1), glm::vec3(0,0,1), glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f))
+    , m_mainCamera(&m_window, glm::vec3(0,0,-2), glm::vec3(0,0,2), glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f))
     , m_minimapCamera(&m_window, glm::vec3(0, 20, 0), glm::vec3(0, -10, 0), glm::ortho(0.f, 1024.0f, 0.f, 600.f, 0.1f, 50.f))
+    , m_sunLight(DirectionalLight(glm::vec3(-1, -1, -1), glm::vec3(0.5, 0.5, 0.1), glm::vec3(1,1,1)))
+    , m_bezierPathLight(PointLight(glm::vec3(0,0,0), glm::vec3(0.4, 0.4, 0.4), glm::vec3(0.8, 0.8, 0.8), 20))
 {
     m_window.registerKeyCallback([this](int key, int scancode, int action, int mods) {
         if (action == GLFW_PRESS)
@@ -24,39 +27,65 @@ Application::Application()
     });
 
     initShaders();
-    initScene();
+    initMeshes();
+    initSkybox();
+    initLights();
 }
 
-void Application::initScene() 
+void Application::initMeshes() 
 {
-    initSkybox(); // Skybox is part of scene, supposedly
-    m_meshes.emplace_back(mergeMeshes(loadMesh("resources/dragon.obj")));
+    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/dragon.obj")), MeshMovement::Static, glm::mat4{1.0f});
+}
 
-    
+void Application::initLights()
+{
+    m_pointLights.emplace_back(glm::vec3(1, 0, 0), glm::vec3(0, 0.5, 0), glm::vec3(0, 1, 0), 20);
+    m_pointLights.emplace_back(glm::vec3(-1, 0, 0), glm::vec3(0.5, 0, 0), glm::vec3(1, 0, 0), 20);
+    m_pointLights.emplace_back(glm::vec3(0, 3, 0), glm::vec3(0, 0, 0.5), glm::vec3(0, 0, 1), 30);
 }
 
 void Application::initShaders()
 {
     try {
-        m_defaultShader = ShaderBuilder().
-            addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/shader_vert.glsl").
-            addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/shader_frag.glsl").
+        //m_defaultShader = ShaderBuilder().
+        //    addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/shader_vert.glsl").
+        //    addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/shader_frag.glsl").
+        //    build();
+
+        m_lightShader = ShaderBuilder().
+            addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/light_vert.glsl").
+            addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/light_frag.glsl").
             build();
 
         m_shadowShader = ShaderBuilder().
             addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/shadow_vert.glsl").
-            addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "Shaders/shadow_frag.glsl").
-            build();
-
-        m_blinnOrPhongShader = ShaderBuilder().
-            addStage(GL_VERTEX_SHADER, "shaders/shader_vert.glsl").
-            addStage(GL_FRAGMENT_SHADER, "shaders/blinn_or_phong_frag.glsl").
+            addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/shadow_frag.glsl").
             build();
 
         m_skyboxShader = ShaderBuilder().
-            addStage(GL_VERTEX_SHADER, "shaders/skybox_vert.glsl").
-            addStage(GL_FRAGMENT_SHADER, "shaders/skybox_frag.glsl").
+            addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/skybox_vert.glsl").
+            addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/skybox_frag.glsl").
             build();
+
+        m_blinnOrPhongPointLightShader = ShaderBuilder().
+            addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/shader_vert.glsl").
+            addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/blinn_or_phong_frag.glsl", 
+                "#define LIGHT_TYPE POINT_LIGHT\n#define MAX_NUM_LIGHTS " + std::to_string(utils::globals::shader_preprocessor_params::MAX_NUM_POINT_LIGHT)).
+            build();
+
+        m_blinnOrPhongDirLightShader = ShaderBuilder().
+            addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/shader_vert.glsl").
+            addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/blinn_or_phong_frag.glsl",
+                "#define LIGHT_TYPE DIRECTIONAL_LIGHT\n#define MAX_NUM_LIGHTS " + std::to_string(utils::globals::shader_preprocessor_params::MAX_NUM_DIR_LIGHT)).
+            build();
+
+        m_blinnOrPhongSpotLightShader = ShaderBuilder().
+            addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/shader_vert.glsl").
+            addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/blinn_or_phong_frag.glsl",
+                "#define LIGHT_TYPE SPOT_LIGHT\n#define MAX_NUM_LIGHTS " + std::to_string(utils::globals::shader_preprocessor_params::MAX_NUM_SPOT_LIGHT)).
+            build();
+
+
     }
     catch (ShaderLoadingException e) {
         std::cerr << e.what() << std::endl;
@@ -70,27 +99,28 @@ void Application::initBuffers()
 
 void Application::initSkybox()
 {
-    Image right{ utils::globals::SKYBOX_RIGHT_IMG};
-    Image left{ utils::globals::SKYBOX_LEFT_IMG };
-    Image top{ utils::globals::SKYBOX_TOP_IMG };
-    Image bottom{ utils::globals::SKYBOX_BOTTOM_IMG };
-    Image front{ utils::globals::SKYBOX_FRONT_IMG };
-    Image back{ utils::globals::SKYBOX_BACK_IMG };
+    Image right{ utils::globals::skybox_params::SKYBOX_RIGHT_IMG};
+    Image left{ utils::globals::skybox_params::SKYBOX_LEFT_IMG };
+    Image top{ utils::globals::skybox_params::SKYBOX_TOP_IMG };
+    Image bottom{ utils::globals::skybox_params::SKYBOX_BOTTOM_IMG };
+    Image front{ utils::globals::skybox_params::SKYBOX_FRONT_IMG };
+    Image back{ utils::globals::skybox_params::SKYBOX_BACK_IMG };
 
     auto getFormat = [](int channels) {return channels == 4 ? GL_RGBA : GL_RGB; };
-    auto getInternalFormat = [](int channels) { return channels == 4 ? GL_RGBA8 : GL_RGB8; };
-
-    // Set up cubemap texture for skybox
+    auto internalFormat = front.channels == 4 ? GL_RGBA8 : GL_RGB8; // Cubemap completeness require the same internal format
+    auto imageDatatype = utils::globals::skybox_params::SKYBOX_IMG_DATATYPE;
+    
+    // Set up cubemap texture for skybox 
     glGenTextures(1, &m_skyboxTex);
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_skyboxTex);
 
-    GLuint imageDatatype = utils::globals::SKYBOX_IMG_DATATYPE;
-    glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, getInternalFormat(right.channels), right.width, right.height, 0, getFormat(right.channels), imageDatatype , right.get_data());
-    glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, 0, getInternalFormat(left.channels), left.width, left.height, 0, getFormat(left.channels), imageDatatype, left.get_data());
-    glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, 0, getInternalFormat(top.channels), top.width, top.height, 0, getFormat(top.channels), imageDatatype, top.get_data());
-    glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, getInternalFormat(bottom.channels), bottom.width, bottom.height, 0, getFormat(bottom.channels), imageDatatype, bottom.get_data());
-    glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, 0, getInternalFormat(front.channels), front.width, front.height, 0, getFormat(front.channels), imageDatatype, front.get_data());
-    glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, getInternalFormat(back.channels), back.width, back.height, 0, getFormat(back.channels), imageDatatype, back.get_data());
+    glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, internalFormat, right.width, right.height, 0, getFormat(right.channels), imageDatatype , right.get_data());
+    glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, 0, internalFormat, left.width, left.height, 0, getFormat(left.channels), imageDatatype, left.get_data());
+    glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, 0, internalFormat, top.width, top.height, 0, getFormat(top.channels), imageDatatype, top.get_data());
+    glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, internalFormat, bottom.width, bottom.height, 0, getFormat(bottom.channels), imageDatatype, bottom.get_data());
+    // Cubemap uses left hand coordinate system
+    glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, 0, internalFormat, front.width, front.height, 0, getFormat(front.channels), imageDatatype, front.get_data());
+    glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, internalFormat, back.width, back.height, 0, getFormat(back.channels), imageDatatype, back.get_data());
 
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -115,65 +145,134 @@ void Application::drawSkybox()
     glUniformMatrix4fv(m_skyboxShader.getUniformLocation("viewProjMatrix"), 1, GL_FALSE, glm::value_ptr(skyboxMatrix));
     glUniform1i(m_skyboxShader.getUniformLocation("skybox"), 0);
 
-    //GLint oldDepthMode;
-    //glGetIntegerv(GL_DEPTH_FUNC, &oldDepthMode);
-    glDepthFunc(GL_LEQUAL);
-
     glBindVertexArray(m_skyboxVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
-
-    //glDepthFunc(oldDepthMode);
-    glDepthFunc(GL_LESS);
 }
 
 void Application::update()
 {
+    glEnable(GL_DEPTH_TEST);
+
     int dummyInteger = 0; // Initialized to 0
     while (!m_window.shouldClose()) {
         // This is your game loop
         // Put your real-time logic and rendering in here
 
         // ==== UPDATE INPUT ====
+        ImGuiIO io = ImGui::GetIO();
         m_window.updateInput();
-        m_mainCamera.updateInput();
+        if (!io.WantCaptureMouse){
+            m_mainCamera.updateInput();
+        }
 
         // Use ImGui for easy input/output of ints, floats, strings, etc...
         ImGui::Begin("Window");
         ImGui::InputInt("This is an integer input", &dummyInteger); // Use ImGui::DragInt or ImGui::DragFloat for larger range of numbers.
         ImGui::Text("Value is: %i", dummyInteger); // Use C printf formatting rules (%i is a signed integer)
         ImGui::Checkbox("Use material if no texture", &m_useMaterial);
+        
+        ImGui::Checkbox("Show lights as points", &utils::globals::showLightsAsPoints);
+
         ImGui::End();
 
         // Clear the screen
-        glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClearDepth(1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glEnable(GL_DEPTH_TEST);
+        //// Fill depth buffer, but disable color writes
+        //glDepthFunc(GL_LEQUAL); 
+        ////glDepthMask(GL_TRUE); 
+        //glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+        //m_shadowShader.bind();
+        //for (auto& renderable : m_renderable) {
+        //    const glm::mat4& modelMatrix = std::get<2>(renderable);
+        //    const glm::mat4 mvpMatrix = m_mainCamera.viewProjectionMatrix() * modelMatrix;
 
-        const glm::mat4 mvpMatrix = m_mainCamera.viewProjectionMatrix() * m_modelMatrix;
-        const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(m_modelMatrix));
+        //    glUniformMatrix4fv(m_shadowShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
+        //    std::get<0>(renderable).draw(m_shadowShader);
+        //}
 
-        for (GPUMesh& mesh : m_meshes) {
-            m_defaultShader.bind();
-            glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
-            //Uncomment this line when you use the modelMatrix (or fragmentPosition)
-            //glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(m_modelMatrix));
-            glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
-            if (mesh.hasTextureCoords()) {
-                m_texture.bind(GL_TEXTURE0);
-                glUniform1i(m_defaultShader.getUniformLocation("colorMap"), 0);
-                glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_TRUE);
-                glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
-            } else {
-                glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
-                glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial);
+        // //Now fill the color buffer, the depth buffer removes blending with the background
+        //glDepthFunc(GL_EQUAL);
+        //glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+        glEnable(GL_BLEND); // Blending for multiple lights
+
+        // Each light type (point, spot, directional) has its own shader
+        // Each shader can handle a certain maximum number of lights defined in "utils.h"
+        // Iterating through mesh first (i.e. outer for-loop) will introduce many state changes (shader program binding)
+        // To minimize state changes, we iterate through each light type first
+        bool firstPassCompleted = false;
+        const int& maxPointLight = utils::globals::shader_preprocessor_params::MAX_NUM_POINT_LIGHT;
+        for (int idx = 0; idx < m_pointLights.size(); idx += maxPointLight) {
+            for (auto& renderable : m_renderable) {
+                const glm::mat4& modelMatrix = std::get<2>(renderable);
+                const glm::mat4 mvpMatrix = m_mainCamera.viewProjectionMatrix() * modelMatrix;
+                const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
+
+                m_blinnOrPhongPointLightShader.bind();
+                glUniformMatrix4fv(m_blinnOrPhongPointLightShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
+                glUniformMatrix4fv(m_blinnOrPhongPointLightShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+                glUniformMatrix3fv(m_blinnOrPhongPointLightShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
+                glUniform3fv(m_blinnOrPhongPointLightShader.getUniformLocation("viewPos"), 1, glm::value_ptr(m_mainCamera.cameraPos()));
+                glUniform1i(m_blinnOrPhongPointLightShader.getUniformLocation("useBlinnCorrection"), GL_FALSE);
+
+                int j = 0;
+                for (; j < maxPointLight && idx + j < m_pointLights.size(); j++) {
+                    PointLight& current = m_pointLights[idx + j];
+                    glUniform3fv(m_blinnOrPhongPointLightShader.getUniformLocation("lights[" + std::to_string(j) + "].lightPos"), 1, glm::value_ptr(current.position));
+                    glUniform1f(m_blinnOrPhongPointLightShader.getUniformLocation("lights[" + std::to_string(j) + "].linearAttenuationCoeff"), current.attenuationCoefficients.x);
+                    glUniform1f(m_blinnOrPhongPointLightShader.getUniformLocation("lights[" + std::to_string(j) + "].quadraticAttenuationCoeff"), current.attenuationCoefficients.y);
+                    glUniform3fv(m_blinnOrPhongPointLightShader.getUniformLocation("lights[" + std::to_string(j) + "].lightDiffuseColor"), 1, glm::value_ptr(current.diffuseColor));
+                    glUniform3fv(m_blinnOrPhongPointLightShader.getUniformLocation("lights[" + std::to_string(j) + "].lightSpecularColor"), 1, glm::value_ptr(current.specularColor));
+                }
+                glUniform1i(m_blinnOrPhongPointLightShader.getUniformLocation("numLights"), j);
+
+                // With opaque mesh blending, don't blend with background on first pass
+                if (!firstPassCompleted) {
+                    glDepthFunc(GL_LESS);
+                    glBlendFunc(GL_ONE, GL_ZERO);
+                    //firstPassCompleted = true;
+                }
+                //else {
+                //    glDepthFunc(GL_EQUAL);
+                //    glBlendFunc(GL_ONE, GL_ONE);
+                //}
+
+                std::get<0>(renderable).draw(m_blinnOrPhongPointLightShader);
+
+                if (!firstPassCompleted) {
+                    glDepthFunc(GL_EQUAL);
+                    glBlendFunc(GL_ONE, GL_ONE);
+                    firstPassCompleted = true;
+                }
             }
-            mesh.draw(m_defaultShader);
+        }
+
+        const int& maxSpotLight = utils::globals::shader_preprocessor_params::MAX_NUM_SPOT_LIGHT;
+
+
+        glDisable(GL_BLEND);
+
+        // Draw point lights as square points
+        if (utils::globals::showLightsAsPoints) {
+            glDepthFunc(GL_LESS);
+            m_lightShader.bind();
+            for (const PointLight& pointLight : m_pointLights) {
+                const glm::vec4 screenPos = m_mainCamera.viewProjectionMatrix() * glm::vec4(pointLight.position, 1.0f);
+
+                glPointSize(10.0f);
+                glUniform4fv(m_lightShader.getUniformLocation("pos"), 1, glm::value_ptr(screenPos));
+                glUniform3fv(m_lightShader.getUniformLocation("color"), 1, glm::value_ptr(pointLight.specularColor));
+                glDrawArrays(GL_POINTS, 0, 1);
+            }
         }
 
         // Render skybox last
+        glDepthFunc(GL_LEQUAL);
         drawSkybox();
+        glDepthFunc(GL_LESS);
 
         // Processes input and swaps the window buffer
         m_window.swapBuffers();

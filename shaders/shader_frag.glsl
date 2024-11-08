@@ -1,6 +1,6 @@
 #version 410
 
-layout(std140) uniform Material // Must match the GPUMaterial defined in src/mesh.h
+layout(std140) uniform Material
 {
     vec3 kd;
 	vec3 ks;
