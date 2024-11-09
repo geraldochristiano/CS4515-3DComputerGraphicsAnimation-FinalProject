@@ -7,7 +7,7 @@ Application::Application()
     , m_texture(RESOURCE_ROOT "resources/checkerboard.png")
     , m_firstCamera(&m_window, glm::vec3(0,2,-8), glm::vec3(0,0,4), glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 50.0f))
     , m_secondCamera(&m_window, glm::vec3(5, 5, 5), glm::vec3(-5, -5, -5), glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 50.0f))
-    , m_sunLight(DirectionalLight(glm::vec3(-1, -1, -1), glm::vec3(1, 1, 1), glm::vec3(1,1,1)))
+    , m_sunLight(DirectionalLight(glm::vec3(1, -1, 0), glm::vec3(1, 1, 1), glm::vec3(1,1,1)))
 {
     m_window.registerKeyCallback([this](int key, int scancode, int action, int mods) {
         if (action == GLFW_PRESS)
@@ -121,12 +121,13 @@ void Application::initShaders()
 void Application::initBezierPath()
 {
     std::vector<glm::vec3> bezierPathPointsPos;
-    float t = 0;
-    for (int i = 0; i < utils::globals::bezier_path::frameCount + 1; i++) {
-        using namespace utils::globals::bezier_path;
-        bezierPathPointsPos.push_back(utils::math::cubicBezier(t, control_point0, control_point1, control_point2, control_point3));
-        t += 1.0 / frameCount;
-    }
+    //float t = 0;
+    //for (int i = 0; i < utils::globals::bezier_path::frameCount + 1; i++) {
+    //    using namespace utils::globals::bezier_path;
+    //    bezierPathPointsPos.push_back(utils::math::cubicBezier(t, control_point0, control_point1, control_point2, control_point3));
+    //    t += 1.0 / frameCount;
+    //}
+
 
     glGenVertexArrays(1, &m_bezierPathVAO);
     glBindVertexArray(m_bezierPathVAO);
@@ -183,9 +184,9 @@ void Application::initSkybox()
 
 void Application::initEnvironmentMapping()
 {
-    glGenFramebuffers(1, &m_mirrorFBO);
+    glGenFramebuffers(1, &m_envMapFBO);
 
-    glGenTextures(1, &m_mirrorTex);
+    glGenTextures(1, &m_envMapTex);
 }
 
 void Application::drawSkybox() 
@@ -255,6 +256,7 @@ void Application::drawScene()
     m_blinnOrPhongPointLightShader.bind();
     for (int idx = 0; idx < m_pointLights.size(); idx += maxPointLight) {
         for (auto& renderable : m_renderable) {
+            // ======= MESH UNIFORMS =========
             const glm::mat4 modelMatrix = renderable.modelMat;
             const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * modelMatrix;
             const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
@@ -312,6 +314,7 @@ void Application::drawScene()
     m_blinnOrPhongSpotLightShader.bind();
     for (int idx = 0; idx < m_spotLights.size(); idx += maxSpotLight) {
         for (auto& renderable : m_renderable) {
+            // ======= MESH UNIFORMS ========
             const glm::mat4 modelMatrix = renderable.modelMat;
             const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * modelMatrix;
             const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
@@ -357,11 +360,56 @@ void Application::drawScene()
         }
     }
 
-     // ==== DIRECTIONAL LIGHT : SUNLIGHT =====
+    // ===== INACTIVE CAMERA SPOT LIGHT ========
+    for (auto& renderable : m_renderable) {
+        // ======= MESH UNIFORMS =======
+        const glm::mat4 modelMatrix = renderable.modelMat;
+        const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * modelMatrix;
+        const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
+        glUniformMatrix4fv(m_blinnOrPhongSpotLightShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
+        glUniformMatrix4fv(m_blinnOrPhongSpotLightShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+        glUniformMatrix3fv(m_blinnOrPhongSpotLightShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
+        glUniform3fv(m_blinnOrPhongSpotLightShader.getUniformLocation("viewPos"), 1, glm::value_ptr(activeCamera.cameraPos()));
+        glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("useBlinnCorrection"), utils::globals::useBlinnCorrection);
+        // ======= DIFFUSE MAP AND NORMAL MAP UNIFORMS ========
+        if (renderable.diffuseMap.has_value() && utils::globals::useDiffuseMap) {
+            glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("hasDiffuseMap"), GL_TRUE);
+            renderable.diffuseMap.value().bind(GL_TEXTURE0);
+            glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("diffuseMap"), 0);
+        }
+        else {
+            glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("hasDiffuseMap"), GL_FALSE);
+        }
+
+        if (renderable.normalMap.has_value() && utils::globals::useNormalMap) {
+            glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("hasNormalMap"), GL_TRUE);
+            renderable.normalMap.value().bind(GL_TEXTURE1);
+            glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("normalMap"), 1);
+        }
+        else {
+            glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("hasNormalMap"), GL_FALSE);
+        }
+        // ======== LIGHT UNIFORMS ==========
+        Camera& InactiveCamera = m_firstCameraActive ? m_secondCamera : m_firstCamera;
+        glUniform3fv(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].lightPos"), 1, glm::value_ptr(InactiveCamera.cameraPos()));
+        glUniform3fv(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].lightDir"), 1, glm::value_ptr(InactiveCamera.cameraForward()));
+        glUniform1f(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].innerCutoff"), glm::cos(glm::radians(25.5f)));
+        glUniform1f(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].outerCutoff"), glm::cos(glm::radians(29.f)));
+        glUniform1f(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].linearAttenuationCoeff"), 0.14);
+        glUniform1f(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].quadraticAttenuationCoeff"), 0.07);
+        glUniform3fv(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].lightDiffuseColor"), 1, glm::value_ptr(utils::globals::inactiveCameraColor));
+        glUniform3fv(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].lightSpecularColor"), 1, glm::value_ptr(utils::globals::inactiveCameraColor));
+        glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("numLights"), 1);
+
+        renderable.mesh.draw(m_blinnOrPhongSpotLightShader);
+    }
+
+    // ==== DIRECTIONAL LIGHT SUNLIGHT =====
     if (utils::globals::sunlight)
     {
         m_blinnOrPhongDirLightShader.bind();
         for (auto& renderable : m_renderable) {
+            // ======= MESH UNIFORMS =======
             const glm::mat4 modelMatrix = renderable.modelMat;
             const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * modelMatrix;
             const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
@@ -389,7 +437,7 @@ void Application::drawScene()
             else {
                 glUniform1i(m_blinnOrPhongDirLightShader.getUniformLocation("hasNormalMap"), GL_FALSE);
             }
-
+            // ======== LIGHT UNIFORMS ==========
             glUniform3fv(m_blinnOrPhongDirLightShader.getUniformLocation("lights[0].lightDir"), 1, glm::value_ptr(m_sunLight.direction));
             glUniform3fv(m_blinnOrPhongDirLightShader.getUniformLocation("lights[0].lightDiffuseColor"), 1, glm::value_ptr(m_sunLight.diffuseColor));
             glUniform3fv(m_blinnOrPhongDirLightShader.getUniformLocation("lights[0].lightSpecularColor"), 1, glm::value_ptr(m_sunLight.specularColor));
@@ -411,7 +459,6 @@ void Application::drawLightsAsPoints()
     for (const PointLight& pointLight : m_pointLights) {
         const glm::vec4 screenPos = activeCamera.viewProjectionMatrix() * glm::vec4(pointLight.position, 1.0f);
         glUniform4fv(m_lightShader.getUniformLocation("pos"), 1, glm::value_ptr(screenPos));
-
         glPointSize(utils::globals::lightPointSize);
         glUniform3fv(m_lightShader.getUniformLocation("color"), 1, glm::value_ptr(pointLight.specularColor));
         glDrawArrays(GL_POINTS, 0, 1);
@@ -420,35 +467,44 @@ void Application::drawLightsAsPoints()
     for (const SpotLight& spotLight : m_spotLights) {
         const glm::vec4 screenPos = activeCamera.viewProjectionMatrix() * glm::vec4(spotLight.position, 1.0f);
         glUniform4fv(m_lightShader.getUniformLocation("pos"), 1, glm::value_ptr(screenPos));
-
         glPointSize(utils::globals::lightPointSize);
         glUniform3fv(m_lightShader.getUniformLocation("color"), 1, glm::value_ptr(spotLight.specularColor));
+        glDrawArrays(GL_POINTS, 0, 1);
+    }
+
+    { // INACTIVE CAMERA SPOT LIGHT
+        Camera& InactiveCamera = m_firstCameraActive ? m_secondCamera : m_firstCamera;
+        const glm::vec4 screenPos = activeCamera.viewProjectionMatrix() * glm::vec4(InactiveCamera.cameraPos(), 1.0f);
+        glUniform4fv(m_lightShader.getUniformLocation("pos"), 1, glm::value_ptr(screenPos));
+        glPointSize(utils::globals::lightPointSize);
+        glUniform3fv(m_lightShader.getUniformLocation("color"), 1, glm::value_ptr(utils::globals::inactiveCameraColor));
         glDrawArrays(GL_POINTS, 0, 1);
     }
 }
 void Application::updateBezierLightPosition() 
 {
     if (utils::globals::pauseBezierPath) return;
-    //for (int i = 0; i < curveCount; i += 1) {d
-//    if (timestep <= (i + 1.0)) {
-//        bezierLight.position = utils::math::cubicBezier(timestep - i, control_points[3 * i], 
-//                                                                    control_points[3 * i + 1], 
-//                                                                    control_points[3 * i + 2], 
-//                                                                    control_points[3 * i + 3]);
-
-//    }
-//}
     PointLight& bezierLight = m_pointLights[0];
     using namespace utils::globals::bezier_path;
 
-    if (timestep <= 1.0)
-        bezierLight.position = utils::math::cubicBezier(timestep, control_point0, control_point1, control_point2, control_point3);
-    else if (timestep <= 2.0)
-        bezierLight.position = utils::math::cubicBezier(timestep - 1.0, control_point3, control_point4, control_point5, control_point6);
-    else if (timestep <= 3.0)
-        bezierLight.position = utils::math::cubicBezier(timestep - 2.0, control_point6, control_point7, control_point8, control_point9);
-    else if (timestep <= 4.0)
-        bezierLight.position = utils::math::cubicBezier(timestep - 3.0, control_point9, control_point10, control_point11, control_point12);
+    for (int i = 0; i < curveCount; i += 1) {
+        if (timestep <= (i + 1.0)) {
+            bezierLight.position = utils::math::cubicBezier(timestep - i, control_points[3 * i], 
+                                                                        control_points[3 * i + 1], 
+                                                                        control_points[3 * i + 2], 
+                                                                        control_points[3 * i + 3]);
+            break;
+        }
+    }
+
+    //if (timestep <= 1.0)
+    //    bezierLight.position = utils::math::cubicBezier(timestep, control_point0, control_point1, control_point2, control_point3);
+    //else if (timestep <= 2.0)
+    //    bezierLight.position = utils::math::cubicBezier(timestep - 1.0, control_point3, control_point4, control_point5, control_point6);
+    //else if (timestep <= 3.0)
+    //    bezierLight.position = utils::math::cubicBezier(timestep - 2.0, control_point6, control_point7, control_point8, control_point9);
+    //else if (timestep <= 4.0)
+    //    bezierLight.position = utils::math::cubicBezier(timestep - 3.0, control_point9, control_point10, control_point11, control_point12);
 
     timestep += 1.0 / frameCount;
     if (timestep >= float(curveCount)) {
@@ -460,8 +516,8 @@ void Application::updateHierarchyTransform()
 {
     if (utils::globals::pauseHierarchyTransform) return;
 
-    m_planetTransform.localModelMatrix = glm::rotate(glm::mat4{ 1.0f }, glm::radians(1.0f), {0,1,0}) * m_planetTransform.localModelMatrix;
-    m_moonTransform.localModelMatrix = glm::rotate(glm::mat4{ 1.0f }, glm::radians(1.0f), {1,0,0}) * m_moonTransform.localModelMatrix;
+    m_planetTransform.localModelMatrix = glm::rotate(glm::mat4{ 1.0f }, glm::radians(utils::globals::hierarchy_transform::planetOrbitSpeed), {0,1,0}) * m_planetTransform.localModelMatrix;
+    m_moonTransform.localModelMatrix = glm::rotate(glm::mat4{ 1.0f }, glm::radians(utils::globals::hierarchy_transform::moonOrbitSpeed), {1,0,0}) * m_moonTransform.localModelMatrix;
 
     planet->modelMat = m_planetTransform.getGlobalTransform();
     moon->modelMat = m_moonTransform.getGlobalTransform();
@@ -495,12 +551,16 @@ void Application::update()
         std::string hierarchyTransformPlaybackTxt = utils::globals::pauseHierarchyTransform ? "Resume hierarchy transform" : "Pause hierarchy transform";
         if (ImGui::Button(hierarchyTransformPlaybackTxt.c_str())) { utils::globals::pauseHierarchyTransform = !utils::globals::pauseHierarchyTransform; };
 
+        ImGui::DragFloat("Planet orbit speed", &utils::globals::hierarchy_transform::planetOrbitSpeed, 0.01f, 0.1f, 50.0f, "%.2f");
+        ImGui::DragFloat("Moon orbit speed", &utils::globals::hierarchy_transform::moonOrbitSpeed, 0.01f, 0.1f, 50.0f, "%.2f");
+
         ImGui::Separator();
-        ImGui::Text("SHADING");
+        ImGui::Text("SHADING & LIGHTING");
         ImGui::Checkbox("Use Blinn-Phong", &utils::globals::useBlinnCorrection);
         ImGui::Checkbox("Use diffuse map", &utils::globals::useDiffuseMap);
         ImGui::Checkbox("Use normal map", &utils::globals::useNormalMap);
         ImGui::Checkbox("Sunlight", &utils::globals::sunlight);
+        ImGui::ColorEdit3("Inactive camera color", glm::value_ptr(utils::globals::inactiveCameraColor));
 
         ImGui::End();
 

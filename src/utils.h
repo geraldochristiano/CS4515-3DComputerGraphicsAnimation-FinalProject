@@ -26,6 +26,7 @@ namespace utils {
         }
 
         const float lightPointSize = 15.0f;
+        glm::vec3 inactiveCameraColor = glm::vec3(0.902, 0.043, 0.831);
         ShadingModel currentShadingModel = ShadingModel::BLINN_OR_PHONG;
         bool showLightsAsPoints = true;
         bool useBlinnCorrection = false;
@@ -37,26 +38,44 @@ namespace utils {
 
         namespace bezier_path {
             const int frameCount = 120; // How many frames taken to do one full cubic bezier curve
-
             const int curveCount = 4;
-            const glm::vec3 control_point0{ 0, 1, 5};
-            const glm::vec3 control_point1{ 4, 1, 5 };
-            const glm::vec3 control_point2{ 5 , 1, 4  };
-            const glm::vec3 control_point3{ 5, 1, 0 }; // overlap curve 1 and 2
-            const glm::vec3 control_point4{ 5, 1, -4};
-            const glm::vec3 control_point5{ 4, 1, -5 };
-            const glm::vec3 control_point6{ 0, 1, -5 }; // overlap curve 2 and 3
-            const glm::vec3 control_point7{ -4, 1, -5 };
-            const glm::vec3 control_point8{ -5, 1, -4 };
-            const glm::vec3 control_point9{ -5, 1, 0 }; // overlap curve 3 and 4
-            const glm::vec3 control_point10{ -5, 1, 4 };
-            const glm::vec3 control_point11{ -4, 1, 5 };
-            const glm::vec3 control_point12{ 0, 1, 5 }; // overlap curve 4 and 1
+             
+            const std::vector<glm::vec3> control_points = {
+                { 0, 1, 5 },
+                { 4, 1, 5 },
+                { 5 , 1, 4 },
+                { 5, 1, 0 }, // overlap curve 1 and 2
+                { 5, 1, -4 },
+                { 4, 1, -5 },
+                { 0, 1, -5 }, // overlap curve 2 and 3
+                { -4, 1, -5 },
+                { -5, 1, -4 },
+                { -5, 1, 0 }, // overlap curve 3 and 4
+                { -5, 1, 4 },
+                { -4, 1, 5 },
+                { 0, 1, 5 } // overlap curve 4 and 1
+            };
+
+            //const glm::vec3 control_point0{ 0, 1, 5};
+            //const glm::vec3 control_point1{ 4, 1, 5 };
+            //const glm::vec3 control_point2{ 5 , 1, 4  };
+            //const glm::vec3 control_point3{ 5, 1, 0 }; // overlap curve 1 and 2
+            //const glm::vec3 control_point4{ 5, 1, -4};
+            //const glm::vec3 control_point5{ 4, 1, -5 };
+            //const glm::vec3 control_point6{ 0, 1, -5 }; // overlap curve 2 and 3
+            //const glm::vec3 control_point7{ -4, 1, -5 };
+            //const glm::vec3 control_point8{ -5, 1, -4 };
+            //const glm::vec3 control_point9{ -5, 1, 0 }; // overlap curve 3 and 4
+            //const glm::vec3 control_point10{ -5, 1, 4 };
+            //const glm::vec3 control_point11{ -4, 1, 5 };
+            //const glm::vec3 control_point12{ 0, 1, 5 }; // overlap curve 4 and 1
+
             float timestep = 0;
         }
 
         namespace hierarchy_transform {
-            
+            float planetOrbitSpeed = 1.0f;
+            float moonOrbitSpeed = 1.0f;
         }
     }
 

@@ -18,6 +18,7 @@ public:
     void setUserInteraction(bool enabled);
 
     glm::vec3 cameraPos() const;
+    glm::vec3 cameraForward() const;
     glm::mat4 viewMatrix() const;
     glm::mat4 projectionMatrix() const;
     glm::mat4 viewProjectionMatrix() const;

@@ -175,6 +175,6 @@ private:
     Transform m_moonTransform;
 
     // Environment mapping
-    GLuint m_mirrorFBO;
-    GLuint m_mirrorTex;
+    GLuint m_envMapFBO;
+    GLuint m_envMapTex;
 };
