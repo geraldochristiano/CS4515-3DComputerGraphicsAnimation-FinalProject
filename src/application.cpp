@@ -5,9 +5,9 @@
 Application::Application()
     : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41)
     , m_texture(RESOURCE_ROOT "resources/checkerboard.png")
-    , m_mainCamera(&m_window, glm::vec3(0,2,-8), glm::vec3(0,0,4), glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f))
-    , m_minimapCamera(&m_window, glm::vec3(0, 20, 0), glm::vec3(0, -10, 0), glm::ortho(0.f, 1024.0f, 0.f, 600.f, 0.1f, 50.f))
-    , m_sunLight(DirectionalLight(glm::vec3(-1, -1, -1), glm::vec3(0.5, 0.5, 0.1), glm::vec3(1,1,1)))
+    , m_firstCamera(&m_window, glm::vec3(0,2,-8), glm::vec3(0,0,4), glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 50.0f))
+    , m_secondCamera(&m_window, glm::vec3(5, 5, 5), glm::vec3(-5, -5, -5), glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 50.0f))
+    , m_sunLight(DirectionalLight(glm::vec3(-1, -1, -1), glm::vec3(1, 1, 1), glm::vec3(1,1,1)))
 {
     m_window.registerKeyCallback([this](int key, int scancode, int action, int mods) {
         if (action == GLFW_PRESS)
@@ -25,7 +25,6 @@ Application::Application()
 
     initShaders();
     initMeshes();
-    initHierarchyTransform();
     initLights();
     initBezierPath();
     initSkybox();
@@ -35,34 +34,42 @@ void Application::initMeshes()
 {
     m_renderable.emplace_back(mergeMeshes(loadMesh("resources/brickwall.obj")), glm::mat4(1.0f),
         Texture("resources/alley-brick-wall_albedo.png"), Texture("resources/alley-brick-wall_normal-ogl.png"));
-    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/dragoon.obj")), glm::scale(glm::translate(glm::mat4{1.0f}, { 0,0, -4 }), { 3,3,3 }), 
+    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/dragoon.obj")), glm::scale(glm::translate(glm::mat4{1.0f}, { 0,0, -3 }), { 3,3,3 }), 
         std::nullopt, std::nullopt);
+    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/grassy_terrain.obj")), glm::mat4{1.0f},
+        Texture("resources/grass1-albedo3.png"), std::nullopt);
 
-    // Hierarchical transform
-    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/sphere.obj")), glm::mat4(1.0f),
+    // ====== INITIALIZING HIERARCHICAL TRANSFORM MESHES ========
+    sun = &m_renderable.emplace_back(mergeMeshes(loadMesh("resources/sphere.obj")), glm::mat4{ 1.0f },
         Texture("resources/2k_sun.jpg"), std::nullopt);
-    sun = &m_renderable[m_renderable.size() - 1];
+    m_sunTransform = { glm::translate(glm::mat4{ 1.0f }, { 0,8,0 }) * glm::scale(glm::mat4{1.0f}, {2,2,2}) , nullptr };
+    sun->modelMat = m_sunTransform.getGlobalTransform();
 
-    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/sphere.obj")), glm::mat4{1.0f},
+    // Put planet relative to the sun
+    planet = &m_renderable.emplace_back(mergeMeshes(loadMesh("resources/sphere.obj")), glm::mat4{ 1.0f } ,
         std::nullopt, std::nullopt);
-    planet1 = &m_renderable[m_renderable.size() - 1];
+    m_planetTransform = { glm::translate(glm::mat4{ 1.0f }, { 0, 0, -4 }) * glm::scale(glm::mat4{1.0f}, {0.5, 0.5, 0.5}) , &m_sunTransform };
+    planet->modelMat = m_planetTransform.getGlobalTransform();
 
-}
-
-void Application::initHierarchyTransform() {
-    std::get<1>(*sun) = glm::translate(glm::mat4{ 1.0f }, { 0,7,0 }) * glm::scale(glm::mat4{ 1.0f }, { 2,2,2 });
-    std::get<1>(*planet1) = glm::translate(glm::mat4{ 1.0f }, { 0, 0, -4 }) * std::get<1>(*sun) * glm::scale(glm::mat4(1.0f), { 0.5, 0.5, 0.5 });
+    // Put moon relative to the planet
+    moon = &m_renderable.emplace_back(mergeMeshes(loadMesh("resources/sphere.obj")), glm::mat4{ 1.0f },
+        std::nullopt, std::nullopt);
+    m_moonTransform = { glm::translate(glm::mat4{ 1.0f }, { 0,2,0 }) * glm::scale(glm::mat4{1.0f}, {0.5, 0.5, 0.5}) , &m_planetTransform };
+    moon->modelMat = m_moonTransform.getGlobalTransform();
 }
 
 void Application::initLights()
 {
-    // !!!!!!!! Index 0 is a bezier path point light !!!!!!!!!!
-    m_pointLights.emplace_back(glm::vec3(0, 0, 0), glm::vec3(0.6, 0.6, 0.6), glm::vec3(1, 1, 1), 50);
+    // ======== INITIALIZING BEZIER POINT LIGHT =============
+    // First index is always the Bezier path light
+    m_pointLights.emplace_back(glm::vec3(0, 0, 0), glm::vec3(0.7, 0, 0), glm::vec3(1, 0, 0), 50);
 
-    m_pointLights.emplace_back(glm::vec3(1, 1, -3), glm::vec3(0.6,0.6,0), glm::vec3(1, 1, 0), 50);
-    m_pointLights.emplace_back(glm::vec3(-1, 1, -3), glm::vec3(0.2, 0.5, 0.5), glm::vec3(0.4, 1, 1), 50);
+    // (Other) point lights
+    m_pointLights.emplace_back(glm::vec3(3, 2, -4), glm::vec3(0.6,0.6,0), glm::vec3(1, 1, 0), 50);
+    m_pointLights.emplace_back(glm::vec3(-3, 2, -4), glm::vec3(0.2, 0.7, 0.7), glm::vec3(0.7, 1, 1), 50);
 
-    m_spotLights.emplace_back(glm::vec3(0,1, 3), glm::vec3(0,0,-3), glm::radians(12.5f), glm::radians(17.5f), glm::vec3(0.8, 0.8, 0.8), glm::vec3(1, 1, 1), 50);
+    // Spot lights
+    m_spotLights.emplace_back(glm::vec3(0,2, 4), glm::vec3(0,-1,-3), glm::radians(12.5f), glm::radians(17.5f), glm::vec3(0.8, 0.8, 0.8), glm::vec3(1, 1, 1), 50);
 }
 
 void Application::initShaders()
@@ -97,7 +104,7 @@ void Application::initShaders()
 
         m_blinnOrPhongSpotLightShader = ShaderBuilder().
             addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/shader_vert.glsl").
-            addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/blinn_or_phong_frag.glsl",
+            addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/blinn_or_phong_spot_frag.glsl",
                 "#define LIGHT_TYPE SPOT_LIGHT\n#define MAX_NUM_LIGHTS " + std::to_string(utils::globals::shader_preprocessor_params::MAX_NUM_SPOT_LIGHT)).
             build();
 
@@ -114,12 +121,12 @@ void Application::initShaders()
 void Application::initBezierPath()
 {
     std::vector<glm::vec3> bezierPathPointsPos;
-    //float t = 0;
-    //for (int i = 0; i < utils::globals::bezier_path::frameCount + 1; i++) {
-    //    using namespace utils::globals::bezier_path;
-    //    bezierPathPointsPos.push_back(utils::math::cubicBezier(t, control_points, control_point1, control_point2, control_point3));
-    //    t += 1.0 / frameCount;
-    //}
+    float t = 0;
+    for (int i = 0; i < utils::globals::bezier_path::frameCount + 1; i++) {
+        using namespace utils::globals::bezier_path;
+        bezierPathPointsPos.push_back(utils::math::cubicBezier(t, control_point0, control_point1, control_point2, control_point3));
+        t += 1.0 / frameCount;
+    }
 
     glGenVertexArrays(1, &m_bezierPathVAO);
     glBindVertexArray(m_bezierPathVAO);
@@ -174,10 +181,19 @@ void Application::initSkybox()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 }
 
+void Application::initEnvironmentMapping()
+{
+    glGenFramebuffers(1, &m_mirrorFBO);
+
+    glGenTextures(1, &m_mirrorTex);
+}
+
 void Application::drawSkybox() 
 {
+    Camera& activeCamera = m_firstCameraActive ? m_firstCamera : m_secondCamera;
+
     m_skyboxShader.bind();
-    glm::mat4 skyboxMatrix = m_mainCamera.projectionMatrix() * glm::mat4(glm::mat3(m_mainCamera.viewMatrix()));
+    glm::mat4 skyboxMatrix = activeCamera.projectionMatrix() * glm::mat4(glm::mat3(activeCamera.viewMatrix()));
     glUniformMatrix4fv(m_skyboxShader.getUniformLocation("viewProjMatrix"), 1, GL_FALSE, glm::value_ptr(skyboxMatrix));
 
     int textureUnit = 0;
@@ -190,34 +206,39 @@ void Application::drawSkybox()
 }
 
 void Application::drawBezierPath() {
+    Camera& activeCamera = m_firstCameraActive ? m_firstCamera : m_secondCamera;
+
     m_bezierPathShader.bind();
-    const glm::mat4 mvpMatrix = m_mainCamera.viewProjectionMatrix() * glm::mat4(1.0f);
+    const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * glm::mat4(1.0f);
     const glm::vec3 lineColor{ 1,0,0 };
 
     glUniformMatrix4fv(m_bezierPathShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
     glUniform3fv(m_bezierPathShader.getUniformLocation("color"), 1, glm::value_ptr(lineColor));
 
-    glLineWidth(10.0f); // Driver implementation dependent
+    glLineWidth(10.0f); // Driver implementation dependent, only 1.0f is guaranteed by the spec
     glBindVertexArray(m_bezierPathVAO);
     glDrawArrays(GL_LINE_STRIP, 0, utils::globals::bezier_path::frameCount + 1);
 }
 
+
 void Application::drawScene()
 {
+    Camera& activeCamera = m_firstCameraActive ? m_firstCamera : m_secondCamera;
+
     // Fill depth buffer, but disable color writes
     glDepthFunc(GL_LEQUAL); 
     glDepthMask(GL_TRUE); 
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
     m_shadowShader.bind();
     for (auto& renderable : m_renderable) {
-        const glm::mat4& modelMatrix = std::get<1>(renderable);
-        const glm::mat4 mvpMatrix = m_mainCamera.viewProjectionMatrix() * modelMatrix;
+        const glm::mat4 modelMatrix = renderable.modelMat;
+        const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * modelMatrix;
 
         glUniformMatrix4fv(m_shadowShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
-        std::get<0>(renderable).draw(m_shadowShader);
+        renderable.mesh.draw(m_shadowShader);
     }
 
-    glDepthFunc(GL_EQUAL);
+    glDepthFunc(GL_LEQUAL);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glEnable(GL_BLEND); // Blending for multiple lights
     glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ZERO);
@@ -231,30 +252,29 @@ void Application::drawScene()
 
     // ======== POINT LIGHT =========
     const int& maxPointLight = utils::globals::shader_preprocessor_params::MAX_NUM_POINT_LIGHT;
+    m_blinnOrPhongPointLightShader.bind();
     for (int idx = 0; idx < m_pointLights.size(); idx += maxPointLight) {
         for (auto& renderable : m_renderable) {
-            m_blinnOrPhongPointLightShader.bind();
-
-            const glm::mat4& modelMatrix = std::get<1>(renderable);
-            const glm::mat4 mvpMatrix = m_mainCamera.viewProjectionMatrix() * modelMatrix;
+            const glm::mat4 modelMatrix = renderable.modelMat;
+            const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * modelMatrix;
             const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
             glUniformMatrix4fv(m_blinnOrPhongPointLightShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
             glUniformMatrix4fv(m_blinnOrPhongPointLightShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
             glUniformMatrix3fv(m_blinnOrPhongPointLightShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
-            glUniform3fv(m_blinnOrPhongPointLightShader.getUniformLocation("viewPos"), 1, glm::value_ptr(m_mainCamera.cameraPos()));
+            glUniform3fv(m_blinnOrPhongPointLightShader.getUniformLocation("viewPos"), 1, glm::value_ptr(activeCamera.cameraPos()));
             glUniform1i(m_blinnOrPhongPointLightShader.getUniformLocation("useBlinnCorrection"), utils::globals::useBlinnCorrection);
             // ======= DIFFUSE MAP AND NORMAL MAP UNIFORMS ========
-            if (std::get<2>(renderable).has_value() && utils::globals::useDiffuseMap) {
+            if (renderable.diffuseMap.has_value() && utils::globals::useDiffuseMap) {
                 glUniform1i(m_blinnOrPhongPointLightShader.getUniformLocation("hasDiffuseMap"), GL_TRUE);
-                std::get<2>(renderable).value().bind(GL_TEXTURE0);
+                renderable.diffuseMap.value().bind(GL_TEXTURE0);
                 glUniform1i(m_blinnOrPhongPointLightShader.getUniformLocation("diffuseMap"), 0);
             } else {
                 glUniform1i(m_blinnOrPhongPointLightShader.getUniformLocation("hasDiffuseMap"), GL_FALSE);
             }
 
-            if (std::get<3>(renderable).has_value() && utils::globals::useNormalMap) {
+            if (renderable.normalMap.has_value() && utils::globals::useNormalMap) {
                 glUniform1i(m_blinnOrPhongPointLightShader.getUniformLocation("hasNormalMap"), GL_TRUE);
-                std::get<3>(renderable).value().bind(GL_TEXTURE1);
+                renderable.normalMap.value().bind(GL_TEXTURE1);
                 glUniform1i(m_blinnOrPhongPointLightShader.getUniformLocation("normalMap"), 1);
             } else {
                 glUniform1i(m_blinnOrPhongPointLightShader.getUniformLocation("hasNormalMap"), GL_FALSE);
@@ -277,7 +297,7 @@ void Application::drawScene()
             //    glBlendFunc(GL_ONE, GL_ZERO);
             //}
 
-            std::get<0>(renderable).draw(m_blinnOrPhongPointLightShader);
+            renderable.mesh.draw(m_blinnOrPhongPointLightShader);
 
             //if (!firstPassCompleted) {
             //    glDepthFunc(GL_LEQUAL);
@@ -289,31 +309,30 @@ void Application::drawScene()
 
     // ======== SPOT LIGHT =========
     const int& maxSpotLight = utils::globals::shader_preprocessor_params::MAX_NUM_SPOT_LIGHT;
+    m_blinnOrPhongSpotLightShader.bind();
     for (int idx = 0; idx < m_spotLights.size(); idx += maxSpotLight) {
         for (auto& renderable : m_renderable) {
-            m_blinnOrPhongSpotLightShader.bind();
-
-            const glm::mat4& modelMatrix = std::get<1>(renderable);
-            const glm::mat4 mvpMatrix = m_mainCamera.viewProjectionMatrix() * modelMatrix;
+            const glm::mat4 modelMatrix = renderable.modelMat;
+            const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * modelMatrix;
             const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
             glUniformMatrix4fv(m_blinnOrPhongSpotLightShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
             glUniformMatrix4fv(m_blinnOrPhongSpotLightShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
             glUniformMatrix3fv(m_blinnOrPhongSpotLightShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
-            glUniform3fv(m_blinnOrPhongSpotLightShader.getUniformLocation("viewPos"), 1, glm::value_ptr(m_mainCamera.cameraPos()));
+            glUniform3fv(m_blinnOrPhongSpotLightShader.getUniformLocation("viewPos"), 1, glm::value_ptr(activeCamera.cameraPos()));
             glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("useBlinnCorrection"), utils::globals::useBlinnCorrection);
             // ======= DIFFUSE MAP AND NORMAL MAP UNIFORMS ========
-            if (std::get<2>(renderable).has_value() && utils::globals::useDiffuseMap) {
+            if (renderable.diffuseMap.has_value() && utils::globals::useDiffuseMap) {
                 glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("hasDiffuseMap"), GL_TRUE);
-                std::get<2>(renderable).value().bind(GL_TEXTURE0);
+                renderable.diffuseMap.value().bind(GL_TEXTURE0);
                 glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("diffuseMap"), 0);
             }
             else {
                 glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("hasDiffuseMap"), GL_FALSE);
             }
 
-            if (std::get<3>(renderable).has_value() && utils::globals::useNormalMap) {
+            if (renderable.normalMap.has_value() && utils::globals::useNormalMap) {
                 glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("hasNormalMap"), GL_TRUE);
-                std::get<3>(renderable).value().bind(GL_TEXTURE1);
+                renderable.normalMap.value().bind(GL_TEXTURE1);
                 glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("normalMap"), 1);
             }
             else {
@@ -334,55 +353,118 @@ void Application::drawScene()
             }
             glUniform1i(m_blinnOrPhongSpotLightShader.getUniformLocation("numLights"), j);
 
-            //if (!firstPassCompleted) {
-            //    glDepthFunc(GL_LESS);
-            //    glBlendFunc(GL_ONE, GL_ZERO);
-            //}
+            renderable.mesh.draw(m_blinnOrPhongSpotLightShader);
+        }
+    }
 
-            std::get<0>(renderable).draw(m_blinnOrPhongSpotLightShader);
+     // ==== DIRECTIONAL LIGHT : SUNLIGHT =====
+    if (utils::globals::sunlight)
+    {
+        m_blinnOrPhongDirLightShader.bind();
+        for (auto& renderable : m_renderable) {
+            const glm::mat4 modelMatrix = renderable.modelMat;
+            const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * modelMatrix;
+            const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
+            glUniformMatrix4fv(m_blinnOrPhongDirLightShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
+            glUniformMatrix4fv(m_blinnOrPhongDirLightShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+            glUniformMatrix3fv(m_blinnOrPhongDirLightShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
+            glUniform3fv(m_blinnOrPhongDirLightShader.getUniformLocation("viewPos"), 1, glm::value_ptr(activeCamera.cameraPos()));
+            glUniform1i(m_blinnOrPhongDirLightShader.getUniformLocation("useBlinnCorrection"), utils::globals::useBlinnCorrection);
 
-            //if (!firstPassCompleted) {
-            //    glDepthFunc(GL_LEQUAL);
-            //    glBlendFunc(GL_ONE, GL_ONE);
-            //    firstPassCompleted = true;
-            //}
+            // ======= DIFFUSE MAP AND NORMAL MAP UNIFORMS ========
+            if (renderable.diffuseMap.has_value() && utils::globals::useDiffuseMap) {
+                glUniform1i(m_blinnOrPhongDirLightShader.getUniformLocation("hasDiffuseMap"), GL_TRUE);
+                renderable.diffuseMap.value().bind(GL_TEXTURE0);
+                glUniform1i(m_blinnOrPhongDirLightShader.getUniformLocation("diffuseMap"), 0);
+            }
+            else {
+                glUniform1i(m_blinnOrPhongDirLightShader.getUniformLocation("hasDiffuseMap"), GL_FALSE);
+            }
+
+            if (renderable.normalMap.has_value() && utils::globals::useNormalMap) {
+                glUniform1i(m_blinnOrPhongDirLightShader.getUniformLocation("hasNormalMap"), GL_TRUE);
+                renderable.normalMap.value().bind(GL_TEXTURE1);
+                glUniform1i(m_blinnOrPhongDirLightShader.getUniformLocation("normalMap"), 1);
+            }
+            else {
+                glUniform1i(m_blinnOrPhongDirLightShader.getUniformLocation("hasNormalMap"), GL_FALSE);
+            }
+
+            glUniform3fv(m_blinnOrPhongDirLightShader.getUniformLocation("lights[0].lightDir"), 1, glm::value_ptr(m_sunLight.direction));
+            glUniform3fv(m_blinnOrPhongDirLightShader.getUniformLocation("lights[0].lightDiffuseColor"), 1, glm::value_ptr(m_sunLight.diffuseColor));
+            glUniform3fv(m_blinnOrPhongDirLightShader.getUniformLocation("lights[0].lightSpecularColor"), 1, glm::value_ptr(m_sunLight.specularColor));
+            glUniform1i(m_blinnOrPhongDirLightShader.getUniformLocation("numLights"), 1);
+
+            renderable.mesh.draw(m_blinnOrPhongDirLightShader);
         }
     }
 
     glDisable(GL_BLEND);
 }
 
-void Application::updateBezierLightPosition() {
-    PointLight& bezierLight = m_pointLights[0];
+void Application::drawLightsAsPoints() 
+{
+    Camera& activeCamera = m_firstCameraActive ? m_firstCamera : m_secondCamera;
 
-    using namespace utils::globals::bezier_path;
-    //for (int i = 0; i < curveCount; i += 1) {
-    //    if (timestep <= (i + 1.0)) {
-    //        bezierLight.position = utils::math::cubicBezier(timestep - i, control_points[3 * i], 
-    //                                                                    control_points[3 * i + 1], 
-    //                                                                    control_points[3 * i + 2], 
-    //                                                                    control_points[3 * i + 3]);
+    glDepthFunc(GL_LESS);
+    m_lightShader.bind();
+    for (const PointLight& pointLight : m_pointLights) {
+        const glm::vec4 screenPos = activeCamera.viewProjectionMatrix() * glm::vec4(pointLight.position, 1.0f);
+        glUniform4fv(m_lightShader.getUniformLocation("pos"), 1, glm::value_ptr(screenPos));
 
-    //    }
-    //}
-
-    timestep += 1.0 / frameCount;
-    if (timestep >= float(curveCount)) {
-        timestep = 0;
+        glPointSize(utils::globals::lightPointSize);
+        glUniform3fv(m_lightShader.getUniformLocation("color"), 1, glm::value_ptr(pointLight.specularColor));
+        glDrawArrays(GL_POINTS, 0, 1);
     }
 
+    for (const SpotLight& spotLight : m_spotLights) {
+        const glm::vec4 screenPos = activeCamera.viewProjectionMatrix() * glm::vec4(spotLight.position, 1.0f);
+        glUniform4fv(m_lightShader.getUniformLocation("pos"), 1, glm::value_ptr(screenPos));
+
+        glPointSize(utils::globals::lightPointSize);
+        glUniform3fv(m_lightShader.getUniformLocation("color"), 1, glm::value_ptr(spotLight.specularColor));
+        glDrawArrays(GL_POINTS, 0, 1);
+    }
+}
+void Application::updateBezierLightPosition() 
+{
+    if (utils::globals::pauseBezierPath) return;
+    //for (int i = 0; i < curveCount; i += 1) {d
+//    if (timestep <= (i + 1.0)) {
+//        bezierLight.position = utils::math::cubicBezier(timestep - i, control_points[3 * i], 
+//                                                                    control_points[3 * i + 1], 
+//                                                                    control_points[3 * i + 2], 
+//                                                                    control_points[3 * i + 3]);
+
+//    }
+//}
+    PointLight& bezierLight = m_pointLights[0];
     using namespace utils::globals::bezier_path;
+
     if (timestep <= 1.0)
         bezierLight.position = utils::math::cubicBezier(timestep, control_point0, control_point1, control_point2, control_point3);
     else if (timestep <= 2.0)
         bezierLight.position = utils::math::cubicBezier(timestep - 1.0, control_point3, control_point4, control_point5, control_point6);
     else if (timestep <= 3.0)
         bezierLight.position = utils::math::cubicBezier(timestep - 2.0, control_point6, control_point7, control_point8, control_point9);
+    else if (timestep <= 4.0)
+        bezierLight.position = utils::math::cubicBezier(timestep - 3.0, control_point9, control_point10, control_point11, control_point12);
 
     timestep += 1.0 / frameCount;
     if (timestep >= float(curveCount)) {
         timestep = 0;
     }
+}
+
+void Application::updateHierarchyTransform() 
+{
+    if (utils::globals::pauseHierarchyTransform) return;
+
+    m_planetTransform.localModelMatrix = glm::rotate(glm::mat4{ 1.0f }, glm::radians(1.0f), {0,1,0}) * m_planetTransform.localModelMatrix;
+    m_moonTransform.localModelMatrix = glm::rotate(glm::mat4{ 1.0f }, glm::radians(1.0f), {1,0,0}) * m_moonTransform.localModelMatrix;
+
+    planet->modelMat = m_planetTransform.getGlobalTransform();
+    moon->modelMat = m_moonTransform.getGlobalTransform();
 }
 
 void Application::update()
@@ -394,20 +476,31 @@ void Application::update()
         // This is your game loop
         // Put your real-time logic and rendering in here
 
-        // ==== UPDATE INPUT ====
+        // ==== UPDATE STUFF ====
         m_window.updateInput();
-        m_mainCamera.updateInput();
+        Camera& activeCamera = m_firstCameraActive ? m_firstCamera : m_secondCamera;
+        activeCamera.updateInput();
         updateBezierLightPosition();
+        updateHierarchyTransform();
 
         // Use ImGui for easy input/output of ints, floats, strings, etc...
         ImGui::Begin("Window");
-        
+
+        ImGui::Separator();
         ImGui::Checkbox("Show lights as points", &utils::globals::showLightsAsPoints);
 
-        ImGui::Text("Shading");
+        std::string bezierPathPlaybackTxt = utils::globals::pauseBezierPath ? "Resume Bezier path" : "Pause Bezier path";
+        if (ImGui::Button(bezierPathPlaybackTxt.c_str())) { utils::globals::pauseBezierPath = !utils::globals::pauseBezierPath; };
+
+        std::string hierarchyTransformPlaybackTxt = utils::globals::pauseHierarchyTransform ? "Resume hierarchy transform" : "Pause hierarchy transform";
+        if (ImGui::Button(hierarchyTransformPlaybackTxt.c_str())) { utils::globals::pauseHierarchyTransform = !utils::globals::pauseHierarchyTransform; };
+
+        ImGui::Separator();
+        ImGui::Text("SHADING");
         ImGui::Checkbox("Use Blinn-Phong", &utils::globals::useBlinnCorrection);
         ImGui::Checkbox("Use diffuse map", &utils::globals::useDiffuseMap);
         ImGui::Checkbox("Use normal map", &utils::globals::useNormalMap);
+        ImGui::Checkbox("Sunlight", &utils::globals::sunlight);
 
         ImGui::End();
 
@@ -421,28 +514,10 @@ void Application::update()
 
         // Draw point lights and spotlights as square points
         if (utils::globals::showLightsAsPoints) {
-            glDepthFunc(GL_LESS);
-            m_lightShader.bind();
-            for (const PointLight& pointLight : m_pointLights) {
-                const glm::vec4 screenPos = m_mainCamera.viewProjectionMatrix() * glm::vec4(pointLight.position, 1.0f);
-                glUniform4fv(m_lightShader.getUniformLocation("pos"), 1, glm::value_ptr(screenPos));
-
-                glPointSize(utils::globals::lightPointSize);
-                glUniform3fv(m_lightShader.getUniformLocation("color"), 1, glm::value_ptr(pointLight.specularColor));
-                glDrawArrays(GL_POINTS, 0, 1);
-            }
-
-            for (const SpotLight& spotLight : m_spotLights) {
-                const glm::vec4 screenPos = m_mainCamera.viewProjectionMatrix() * glm::vec4(spotLight.position, 1.0f);
-                glUniform4fv(m_lightShader.getUniformLocation("pos"), 1, glm::value_ptr(screenPos));
-
-                glPointSize(utils::globals::lightPointSize);
-                glUniform3fv(m_lightShader.getUniformLocation("color"), 1, glm::value_ptr(spotLight.specularColor));
-                glDrawArrays(GL_POINTS, 0, 1);
-            }
+            drawLightsAsPoints();
         }
 
-        // Render skybox last
+        // Draw skybox last for optimization
         glDepthFunc(GL_LEQUAL);
         drawSkybox();
         glDepthFunc(GL_LESS);
@@ -457,7 +532,9 @@ void Application::update()
 // mods - Any modifier keys pressed, like shift or control
 void Application::onKeyPressed(int key, int mods)
 {
-    std::cout << "Key pressed: " << key << std::endl;
+    if (key == GLFW_KEY_SPACE) {
+        m_firstCameraActive = !m_firstCameraActive;
+    }
 }
 
 // In here you can handle key releases

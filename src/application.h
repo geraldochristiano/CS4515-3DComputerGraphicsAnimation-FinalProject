@@ -37,7 +37,7 @@ struct DirectionalLight : Light {
     DirectionalLight(const glm::vec3& dir,
         const glm::vec3& diffuse,
         const glm::vec3& specular)
-        : direction(dir)
+        : direction(glm::normalize(dir))
     {
         diffuseColor = diffuse;
         specularColor = specular;
@@ -76,7 +76,7 @@ struct SpotLight : Light {
         const glm::vec3& specular,
         const float& maxDistance)
         : position(pos)
-        , direction(dir)
+        , direction(glm::normalize(dir))
         , attenuationCoefficients(utils::math::getAttenuationCoefficient(maxDistance))
         , innerCutoffAngle(innerCutoff)
         , outerCutoffAngle(outerCutoff)
@@ -86,10 +86,26 @@ struct SpotLight : Light {
     }
 };
 
+struct Transform {
+    glm::mat4 localModelMatrix;
+    Transform* parent; // nullptr when "this" transform is root
 
-enum class MeshMovement {
-    Static, 
-    Dynamic
+    glm::mat4 getGlobalTransform(){
+        glm::mat4 globMatrix = localModelMatrix;
+        Transform* iter = parent;
+        while (iter != nullptr) {
+            globMatrix = iter->localModelMatrix * globMatrix;
+            iter = iter->parent;
+        }
+        return globMatrix;
+    }
+};
+
+struct Renderable {
+    GPUMesh mesh;
+    glm::mat4 modelMat;
+    std::optional<Texture> diffuseMap;
+    std::optional<Texture> normalMap;
 };
 
 class Application {
@@ -101,11 +117,12 @@ public:
     void initBezierPath();
     void initSkybox();
     void initLights();
-    void initHierarchyTransform();
+    void initEnvironmentMapping();
 
     void drawScene();
     void drawSkybox();
     void drawBezierPath();
+    void drawLightsAsPoints();
     void updateBezierLightPosition();
     void updateHierarchyTransform();
     void update();
@@ -130,16 +147,15 @@ private:
     Texture m_texture;
     bool m_useMaterial{ true };
     
-    using DiffuseMapTex = std::optional<Texture>;
-    using NormalMapTex = std::optional<Texture>;
-    std::vector < std::tuple<GPUMesh, glm::mat4, DiffuseMapTex, NormalMapTex> > m_renderable;
+    std::vector < Renderable> m_renderable;
 
     std::vector<PointLight> m_pointLights;
     std::vector<SpotLight> m_spotLights;
     DirectionalLight m_sunLight;
 
-    Camera m_mainCamera;
-    Camera m_minimapCamera;
+    bool m_firstCameraActive = true;
+    Camera m_firstCamera;
+    Camera m_secondCamera;
 
     // Bezier path
     GLuint m_bezierPathVAO;
@@ -151,7 +167,14 @@ private:
     GLuint m_skyboxTex;
 
     // Hierarchical transform
-    std::tuple<GPUMesh, glm::mat4, DiffuseMapTex, NormalMapTex>* sun;
-    std::tuple<GPUMesh, glm::mat4, DiffuseMapTex, NormalMapTex>* planet1;
+    Renderable* sun;
+    Renderable* planet;
+    Renderable* moon;
+    Transform m_sunTransform;
+    Transform m_planetTransform;
+    Transform m_moonTransform;
 
+    // Environment mapping
+    GLuint m_mirrorFBO;
+    GLuint m_mirrorTex;
 };

@@ -3,7 +3,7 @@
 //$define_string
 
 #ifndef MAX_NUM_LIGHTS
-#define MAX_NUM_LIGHTS 4
+    #define MAX_NUM_LIGHTS 4
 #endif
 
 // Global variables for lighting calculations
@@ -15,11 +15,6 @@ layout(std140) uniform Material
 	float transparency;
 };
 
-uniform bool hasDiffuseMap;
-uniform sampler2D diffuseMap;
-uniform bool hasNormalMap;
-uniform sampler2D normalMap;
-
 struct Light {
 #ifdef LIGHT_TYPE
     #if (LIGHT_TYPE == POINT_LIGHT)
@@ -29,14 +24,6 @@ struct Light {
 
     #elif (LIGHT_TYPE == DIRECTIONAL_LIGHT)
     vec3 lightDir;
-
-    #elif (LIGHT_TYPE == SPOT_LIGHT)
-    vec3 lightPos;
-    float innerCutoff;
-    vec3 lightDir;
-    float outerCutoff;
-    float linearAttenuationCoeff;
-    float quadraticAttenuationCoeff;
 
     #endif
 #endif
@@ -48,6 +35,11 @@ uniform Light lights[MAX_NUM_LIGHTS];
 uniform int numLights;
 uniform vec3 viewPos;
 uniform bool useBlinnCorrection = true;
+
+uniform bool hasDiffuseMap;
+uniform sampler2D diffuseMap;
+uniform bool hasNormalMap;
+uniform sampler2D normalMap;
 
 // Output for on-screen color
 layout(location = 0) out vec4 outColor;
@@ -121,34 +113,6 @@ void main()
             }
         }
 
-        // Spotlights calculation
-        #elif (LIGHT_TYPE == SPOT_LIGHT)
-        for (int i = 0; i < numLights && i < MAX_NUM_LIGHTS; i++){
-            Light lt = lights[i];
-            vec3 L = normalize(lt.lightPos - fragPosition);
-
-            float diffuseRatio = max(dot(N,L), 0.0);
-            float specularRatio = 0;
-            if (useBlinnCorrection){
-                vec3 H = normalize(L + V);
-                specularRatio = pow(max(dot(N, H), 0.0), shininess);
-            } else {
-                vec3 R = reflect(-L, N);
-                specularRatio = pow(max(dot(V, R), 0.0), shininess);
-            }
-
-            // Soft edges / brightness falloff
-            float theta = dot(L, normalize(-lt.lightDir));
-            float epsilon = lt.innerCutoff - lt.outerCutoff;
-            float intensity = clamp((theta - lt.outerCutoff) / epsilon, 0.0, 1.0);
-
-            // Attenuation
-            float dist = length(lt.lightPos - fragPosition);
-            float attenuation = 1.0 / (1.0 + (lt.linearAttenuationCoeff * dist) + (lt.quadraticAttenuationCoeff * dist * dist));
-            finalColor += (diffuseRatio * (hasDiffuseMap ? texture(diffuseMap, fragTexCoord).rgb : kd) * lt.lightDiffuseColor * attenuation * intensity) + 
-                    (specularRatio * ks * lt.lightSpecularColor * attenuation * intensity);
-         
-        }
         #endif
     #endif
 
