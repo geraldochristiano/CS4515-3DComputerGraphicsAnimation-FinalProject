@@ -3,9 +3,9 @@
 #include <framework/image.h>
 
 Application::Application()
-    : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41)
+    : m_window("Final Project", glm::ivec2(utils::globals::WINDOW_WIDTH, utils::globals::WINDOW_HEIGHT), OpenGLVersion::GL41)
     , m_texture(RESOURCE_ROOT "resources/checkerboard.png")
-    , m_firstCamera(&m_window, glm::vec3(0,2,-8), glm::vec3(0,0,4), glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 50.0f))
+    , m_firstCamera(&m_window, glm::vec3(0,5,10), glm::vec3(0,0,-1), glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 50.0f))
     , m_secondCamera(&m_window, glm::vec3(5, 5, 5), glm::vec3(-5, -5, -5), glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 50.0f))
     , m_sunLight(DirectionalLight(glm::vec3(1, -1, 0), glm::vec3(1, 1, 1), glm::vec3(1,1,1)))
 {
@@ -28,32 +28,49 @@ Application::Application()
     initLights();
     initBezierPath();
     initSkybox();
+    initEnvironmentMapping();
+    initHierarchicalTransform();
 }
 
 void Application::initMeshes() 
 {
-    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/brickwall.obj")), glm::mat4(1.0f),
-        Texture("resources/alley-brick-wall_albedo.png"), Texture("resources/alley-brick-wall_normal-ogl.png"));
-    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/dragoon.obj")), glm::scale(glm::translate(glm::mat4{1.0f}, { 0,0, -3 }), { 3,3,3 }), 
-        std::nullopt, std::nullopt);
-    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/grassy_terrain.obj")), glm::mat4{1.0f},
-        Texture("resources/grass1-albedo3.png"), std::nullopt);
+    // ========= INITIALIZING HIERARCHICAL TRANSFORM MESHES ========
+    // Index 0 - 2 is the hierarchical transform meshes
+    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/sphere.obj")), glm::mat4{ 1.0f },
+        Texture("resources/2k_sun.jpg"), std::nullopt, StateType::Dynamic, DrawingMode::Opaque);
+   
+    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/sphere.obj")), glm::mat4{ 1.0f },
+        std::nullopt, std::nullopt, StateType::Dynamic, DrawingMode::Opaque);
 
-    // ====== INITIALIZING HIERARCHICAL TRANSFORM MESHES ========
-    sun = &m_renderable.emplace_back(mergeMeshes(loadMesh("resources/sphere.obj")), glm::mat4{ 1.0f },
-        Texture("resources/2k_sun.jpg"), std::nullopt);
+    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/sphere.obj")), glm::mat4{ 1.0f },
+        std::nullopt, std::nullopt, StateType::Dynamic, DrawingMode::Opaque);
+
+    // ========= OTHER MESHES =========
+    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/brickwall.obj")), glm::mat4(1.0f), 
+        Texture("resources/alley-brick-wall_albedo.png"), Texture("resources/alley-brick-wall_normal-ogl.png"), StateType::Static, DrawingMode::Opaque);
+    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/grassy_terrain.obj")), glm::mat4{1.0f}, 
+        Texture("resources/grass1-albedo3.png"), std::nullopt, StateType::Static, DrawingMode::Opaque);
+
+    // Reflective meshes
+    m_renderable.emplace_back(mergeMeshes(loadMesh("resources/dragoon.obj")),
+        glm::translate(glm::mat4{ 1.0f }, { 0, 4, -5 }) * glm::scale(glm::mat4{ 1.0f }, { 3,3,3 }),
+        std::nullopt, std::nullopt, StateType::Static, DrawingMode::Reflective);
+}
+
+void Application::initHierarchicalTransform()
+{
+    sun = &m_renderable[0];
+    planet = &m_renderable[1];
+    moon = &m_renderable[2];
+
     m_sunTransform = { glm::translate(glm::mat4{ 1.0f }, { 0,8,0 }) * glm::scale(glm::mat4{1.0f}, {2,2,2}) , nullptr };
     sun->modelMat = m_sunTransform.getGlobalTransform();
 
     // Put planet relative to the sun
-    planet = &m_renderable.emplace_back(mergeMeshes(loadMesh("resources/sphere.obj")), glm::mat4{ 1.0f } ,
-        std::nullopt, std::nullopt);
     m_planetTransform = { glm::translate(glm::mat4{ 1.0f }, { 0, 0, -4 }) * glm::scale(glm::mat4{1.0f}, {0.5, 0.5, 0.5}) , &m_sunTransform };
     planet->modelMat = m_planetTransform.getGlobalTransform();
 
     // Put moon relative to the planet
-    moon = &m_renderable.emplace_back(mergeMeshes(loadMesh("resources/sphere.obj")), glm::mat4{ 1.0f },
-        std::nullopt, std::nullopt);
     m_moonTransform = { glm::translate(glm::mat4{ 1.0f }, { 0,2,0 }) * glm::scale(glm::mat4{1.0f}, {0.5, 0.5, 0.5}) , &m_planetTransform };
     moon->modelMat = m_moonTransform.getGlobalTransform();
 }
@@ -61,7 +78,7 @@ void Application::initMeshes()
 void Application::initLights()
 {
     // ======== INITIALIZING BEZIER POINT LIGHT =============
-    // First index is always the Bezier path light
+    // Index 0 is always the Bezier path light
     m_pointLights.emplace_back(glm::vec3(0, 0, 0), glm::vec3(0.7, 0, 0), glm::vec3(1, 0, 0), 50);
 
     // (Other) point lights
@@ -112,6 +129,12 @@ void Application::initShaders()
             addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/bezier_curve_vert.glsl").
             addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/bezier_curve_frag.glsl").
             build();
+
+        m_reflectionMapShader = ShaderBuilder().
+            addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/reflectionmap_vert.glsl").
+            addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/reflectionmap_frag.glsl").
+            build();
+
     }
     catch (ShaderLoadingException e) {
         std::cerr << e.what() << std::endl;
@@ -121,13 +144,16 @@ void Application::initShaders()
 void Application::initBezierPath()
 {
     std::vector<glm::vec3> bezierPathPointsPos;
-    //float t = 0;
-    //for (int i = 0; i < utils::globals::bezier_path::frameCount + 1; i++) {
-    //    using namespace utils::globals::bezier_path;
-    //    bezierPathPointsPos.push_back(utils::math::cubicBezier(t, control_point0, control_point1, control_point2, control_point3));
-    //    t += 1.0 / frameCount;
-    //}
 
+    using namespace utils::globals::bezier_path;
+    float t = 0;
+    for (int i = 0; i < curveCount; i++) {
+        while (t < 1.0) {
+            bezierPathPointsPos.push_back(utils::math::cubicBezier(t, control_points[3 * i], control_points[3 * i + 1], control_points[3 * i + 2], control_points[3 * i + 3]));
+            t += 1.0 / frameCount;
+        }
+        t = 0.0;
+    }
 
     glGenVertexArrays(1, &m_bezierPathVAO);
     glBindVertexArray(m_bezierPathVAO);
@@ -186,21 +212,39 @@ void Application::initEnvironmentMapping()
 {
     glGenFramebuffers(1, &m_envMapFBO);
 
+    glGenTextures(1, &m_preRenderedEnvMapTex);
+    glBindTexture(GL_TEXTURE_2D, m_preRenderedEnvMapTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, utils::globals::WINDOW_WIDTH, utils::globals::WINDOW_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
     glGenTextures(1, &m_envMapTex);
+    glBindTexture(GL_TEXTURE_2D, m_preRenderedEnvMapTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, utils::globals::WINDOW_WIDTH, utils::globals::WINDOW_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    
 }
+
+
 
 void Application::drawSkybox() 
 {
     Camera& activeCamera = m_firstCameraActive ? m_firstCamera : m_secondCamera;
 
     m_skyboxShader.bind();
-    glm::mat4 skyboxMatrix = activeCamera.projectionMatrix() * glm::mat4(glm::mat3(activeCamera.viewMatrix()));
+    const glm::mat4 untranslatedViewMatrix = glm::mat4(glm::mat3(activeCamera.viewMatrix()));
+    const glm::mat4 skyboxMatrix = activeCamera.projectionMatrix() * untranslatedViewMatrix;
     glUniformMatrix4fv(m_skyboxShader.getUniformLocation("viewProjMatrix"), 1, GL_FALSE, glm::value_ptr(skyboxMatrix));
 
-    int textureUnit = 0;
-    glActiveTexture(GL_TEXTURE0 + textureUnit);
+    const int skyboxTexUnit = 0;
+    glActiveTexture(GL_TEXTURE0 + skyboxTexUnit);
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_skyboxTex);
-    glUniform1i(m_skyboxShader.getUniformLocation("skybox"), textureUnit);
+    glUniform1i(m_skyboxShader.getUniformLocation("skybox"), skyboxTexUnit);
 
     glBindVertexArray(m_skyboxVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -232,6 +276,9 @@ void Application::drawScene()
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
     m_shadowShader.bind();
     for (auto& renderable : m_renderable) {
+
+        if (renderable.drawMode == DrawingMode::Reflective) continue;
+
         const glm::mat4 modelMatrix = renderable.modelMat;
         const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * modelMatrix;
 
@@ -239,12 +286,11 @@ void Application::drawScene()
         renderable.mesh.draw(m_shadowShader);
     }
 
-    glDepthFunc(GL_LEQUAL);
+    // Enable color write and set depth test function to also check for equal depth
+    glDepthFunc(GL_EQUAL);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glEnable(GL_BLEND); // Blending for multiple lights
     glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ZERO);
-
-     //bool firstPassCompleted = false;
     
     // Each light type (point, spot, directional) has its own shader
     // Each shader can handle a certain maximum number of lights defined in "utils.h"
@@ -256,6 +302,9 @@ void Application::drawScene()
     m_blinnOrPhongPointLightShader.bind();
     for (int idx = 0; idx < m_pointLights.size(); idx += maxPointLight) {
         for (auto& renderable : m_renderable) {
+
+            if (renderable.drawMode == DrawingMode::Reflective) continue;
+
             // ======= MESH UNIFORMS =========
             const glm::mat4 modelMatrix = renderable.modelMat;
             const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * modelMatrix;
@@ -293,19 +342,8 @@ void Application::drawScene()
             }
             glUniform1i(m_blinnOrPhongPointLightShader.getUniformLocation("numLights"), j);
 
-            // With opaque mesh blending, don't blend with background on first pass
-            //if (!firstPassCompleted) {
-            //    glDepthFunc(GL_LESS);
-            //    glBlendFunc(GL_ONE, GL_ZERO);
-            //}
-
             renderable.mesh.draw(m_blinnOrPhongPointLightShader);
 
-            //if (!firstPassCompleted) {
-            //    glDepthFunc(GL_LEQUAL);
-            //    glBlendFunc(GL_ONE, GL_ONE);
-            //    firstPassCompleted = true;
-            //}
         }
     }
 
@@ -314,6 +352,9 @@ void Application::drawScene()
     m_blinnOrPhongSpotLightShader.bind();
     for (int idx = 0; idx < m_spotLights.size(); idx += maxSpotLight) {
         for (auto& renderable : m_renderable) {
+
+            if (renderable.drawMode == DrawingMode::Reflective) continue;
+
             // ======= MESH UNIFORMS ========
             const glm::mat4 modelMatrix = renderable.modelMat;
             const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * modelMatrix;
@@ -362,6 +403,9 @@ void Application::drawScene()
 
     // ===== INACTIVE CAMERA SPOT LIGHT ========
     for (auto& renderable : m_renderable) {
+
+        if (renderable.drawMode == DrawingMode::Reflective) continue;
+
         // ======= MESH UNIFORMS =======
         const glm::mat4 modelMatrix = renderable.modelMat;
         const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * modelMatrix;
@@ -393,8 +437,8 @@ void Application::drawScene()
         Camera& InactiveCamera = m_firstCameraActive ? m_secondCamera : m_firstCamera;
         glUniform3fv(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].lightPos"), 1, glm::value_ptr(InactiveCamera.cameraPos()));
         glUniform3fv(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].lightDir"), 1, glm::value_ptr(InactiveCamera.cameraForward()));
-        glUniform1f(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].innerCutoff"), glm::cos(glm::radians(25.5f)));
-        glUniform1f(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].outerCutoff"), glm::cos(glm::radians(29.f)));
+        glUniform1f(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].innerCutoff"), glm::cos(glm::radians(12.5f)));
+        glUniform1f(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].outerCutoff"), glm::cos(glm::radians(17.5f)));
         glUniform1f(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].linearAttenuationCoeff"), 0.14);
         glUniform1f(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].quadraticAttenuationCoeff"), 0.07);
         glUniform3fv(m_blinnOrPhongSpotLightShader.getUniformLocation("lights[0].lightDiffuseColor"), 1, glm::value_ptr(utils::globals::inactiveCameraColor));
@@ -409,6 +453,9 @@ void Application::drawScene()
     {
         m_blinnOrPhongDirLightShader.bind();
         for (auto& renderable : m_renderable) {
+
+            if (renderable.drawMode == DrawingMode::Reflective) continue;
+
             // ======= MESH UNIFORMS =======
             const glm::mat4 modelMatrix = renderable.modelMat;
             const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * modelMatrix;
@@ -447,7 +494,32 @@ void Application::drawScene()
         }
     }
 
-    glDisable(GL_BLEND);
+    glDisable(GL_BLEND); // Disable blending
+    glDepthFunc(GL_LESS);
+
+    // ======== DRAWING REFLECTION MAP ==========
+    m_reflectionMapShader.bind();
+    for (auto& renderable : m_renderable) {
+
+        if (renderable.drawMode != DrawingMode::Reflective) continue;
+
+        // ======== MESH UNIFORMS =========
+        const glm::mat4 modelMatrix = renderable.modelMat;
+        const glm::mat4 mvpMatrix = activeCamera.viewProjectionMatrix() * modelMatrix;
+        const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
+        glUniformMatrix4fv(m_reflectionMapShader.getUniformLocation("viewProjMatrix"), 1, GL_FALSE, glm::value_ptr(activeCamera.viewProjectionMatrix()));
+        glUniformMatrix4fv(m_reflectionMapShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+        glUniformMatrix3fv(m_reflectionMapShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
+
+        // ========= OTHER UNIFORMS ========
+        glUniform3fv(m_reflectionMapShader.getUniformLocation("viewPos"), 1, glm::value_ptr(activeCamera.cameraPos()));
+        const int skyboxTexUnit = 0;
+        glActiveTexture(GL_TEXTURE0 + skyboxTexUnit);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, m_skyboxTex);
+        glUniform1i(m_reflectionMapShader.getUniformLocation("skybox"), skyboxTexUnit);
+
+        renderable.mesh.draw(m_reflectionMapShader);
+    }
 }
 
 void Application::drawLightsAsPoints() 
@@ -481,6 +553,7 @@ void Application::drawLightsAsPoints()
         glDrawArrays(GL_POINTS, 0, 1);
     }
 }
+
 void Application::updateBezierLightPosition() 
 {
     if (utils::globals::pauseBezierPath) return;
@@ -497,22 +570,13 @@ void Application::updateBezierLightPosition()
         }
     }
 
-    //if (timestep <= 1.0)
-    //    bezierLight.position = utils::math::cubicBezier(timestep, control_point0, control_point1, control_point2, control_point3);
-    //else if (timestep <= 2.0)
-    //    bezierLight.position = utils::math::cubicBezier(timestep - 1.0, control_point3, control_point4, control_point5, control_point6);
-    //else if (timestep <= 3.0)
-    //    bezierLight.position = utils::math::cubicBezier(timestep - 2.0, control_point6, control_point7, control_point8, control_point9);
-    //else if (timestep <= 4.0)
-    //    bezierLight.position = utils::math::cubicBezier(timestep - 3.0, control_point9, control_point10, control_point11, control_point12);
-
     timestep += 1.0 / frameCount;
     if (timestep >= float(curveCount)) {
         timestep = 0;
     }
 }
 
-void Application::updateHierarchyTransform() 
+void Application::updateHierarchicalTransform() 
 {
     if (utils::globals::pauseHierarchyTransform) return;
 
@@ -537,17 +601,20 @@ void Application::update()
         Camera& activeCamera = m_firstCameraActive ? m_firstCamera : m_secondCamera;
         activeCamera.updateInput();
         updateBezierLightPosition();
-        updateHierarchyTransform();
+        updateHierarchicalTransform();
 
         // Use ImGui for easy input/output of ints, floats, strings, etc...
         ImGui::Begin("Window");
 
-        ImGui::Separator();
         ImGui::Checkbox("Show lights as points", &utils::globals::showLightsAsPoints);
 
+        ImGui::Separator();
+        ImGui::Text("Bezier path");
         std::string bezierPathPlaybackTxt = utils::globals::pauseBezierPath ? "Resume Bezier path" : "Pause Bezier path";
         if (ImGui::Button(bezierPathPlaybackTxt.c_str())) { utils::globals::pauseBezierPath = !utils::globals::pauseBezierPath; };
 
+        ImGui::Separator();
+        ImGui::Text("Hierarchical transform");
         std::string hierarchyTransformPlaybackTxt = utils::globals::pauseHierarchyTransform ? "Resume hierarchy transform" : "Pause hierarchy transform";
         if (ImGui::Button(hierarchyTransformPlaybackTxt.c_str())) { utils::globals::pauseHierarchyTransform = !utils::globals::pauseHierarchyTransform; };
 
@@ -555,12 +622,13 @@ void Application::update()
         ImGui::DragFloat("Moon orbit speed", &utils::globals::hierarchy_transform::moonOrbitSpeed, 0.01f, 0.1f, 50.0f, "%.2f");
 
         ImGui::Separator();
-        ImGui::Text("SHADING & LIGHTING");
+        ImGui::Text("Shading & lighting");
         ImGui::Checkbox("Use Blinn-Phong", &utils::globals::useBlinnCorrection);
         ImGui::Checkbox("Use diffuse map", &utils::globals::useDiffuseMap);
         ImGui::Checkbox("Use normal map", &utils::globals::useNormalMap);
-        ImGui::Checkbox("Sunlight", &utils::globals::sunlight);
         ImGui::ColorEdit3("Inactive camera color", glm::value_ptr(utils::globals::inactiveCameraColor));
+        ImGui::Checkbox("Activate sunlight", &utils::globals::sunlight);
+        //ImGui::DragFloat3("Sunlight direction", glm::value_ptr(utils::globals::sunlightDirection), 0.01, 0.0, 1, "%.2f");
 
         ImGui::End();
 

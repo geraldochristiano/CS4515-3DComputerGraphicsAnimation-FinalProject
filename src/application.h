@@ -26,9 +26,20 @@ DISABLE_WARNINGS_POP()
 #include <vector>
 
 
+enum class StateType {
+    Static,
+    Dynamic
+};
+
+enum class DrawingMode {
+    Opaque,
+    Reflective,
+};
+
 struct Light {
     glm::vec3 diffuseColor;
     glm::vec3 specularColor;
+    StateType lightType;
 };
 
 struct DirectionalLight : Light {
@@ -36,11 +47,13 @@ struct DirectionalLight : Light {
 
     DirectionalLight(const glm::vec3& dir,
         const glm::vec3& diffuse,
-        const glm::vec3& specular)
+        const glm::vec3& specular,
+        StateType type = StateType::Static)
         : direction(glm::normalize(dir))
     {
         diffuseColor = diffuse;
         specularColor = specular;
+        lightType = type;
     }
 };
 
@@ -52,12 +65,14 @@ struct PointLight : Light {
     PointLight(const glm::vec3& pos,
         const glm::vec3& diffuse,
         const glm::vec3& specular,
-        const float& maxDistance)
+        const float& maxDistance,
+        StateType type = StateType::Static)
         : position(pos)
         , attenuationCoefficients(utils::math::getAttenuationCoefficient(maxDistance))
     {
         diffuseColor = diffuse;
         specularColor = specular;
+        lightType = type;
     }
 };
 
@@ -74,7 +89,8 @@ struct SpotLight : Light {
         const float& outerCutoff,
         const glm::vec3& diffuse,
         const glm::vec3& specular,
-        const float& maxDistance)
+        const float& maxDistance,
+        StateType type = StateType::Static)
         : position(pos)
         , direction(glm::normalize(dir))
         , attenuationCoefficients(utils::math::getAttenuationCoefficient(maxDistance))
@@ -83,6 +99,7 @@ struct SpotLight : Light {
     {
         diffuseColor = diffuse;
         specularColor = specular;
+        lightType = type;
     }
 };
 
@@ -106,7 +123,10 @@ struct Renderable {
     glm::mat4 modelMat;
     std::optional<Texture> diffuseMap;
     std::optional<Texture> normalMap;
+    StateType meshType;
+    DrawingMode drawMode;
 };
+
 
 class Application {
 public:
@@ -118,13 +138,14 @@ public:
     void initSkybox();
     void initLights();
     void initEnvironmentMapping();
+    void initHierarchicalTransform();
 
     void drawScene();
     void drawSkybox();
     void drawBezierPath();
     void drawLightsAsPoints();
     void updateBezierLightPosition();
-    void updateHierarchyTransform();
+    void updateHierarchicalTransform();
     void update();
 
     void onKeyPressed(int key, int mods);
@@ -143,6 +164,7 @@ private:
     Shader m_blinnOrPhongDirLightShader;
     Shader m_blinnOrPhongSpotLightShader;
     Shader m_bezierPathShader;
+    Shader m_reflectionMapShader;
 
     Texture m_texture;
     bool m_useMaterial{ true };
@@ -176,5 +198,6 @@ private:
 
     // Environment mapping
     GLuint m_envMapFBO;
+    GLuint m_preRenderedEnvMapTex;
     GLuint m_envMapTex;
 };

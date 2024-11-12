@@ -8,6 +8,9 @@ enum class ShadingModel {
 
 namespace utils {
     namespace globals {
+        const int WINDOW_WIDTH = 1024;
+        const int WINDOW_HEIGHT = 1024;
+
         namespace skybox_params {
             namespace fs = std::filesystem;
             const fs::path SKYBOX_RIGHT_IMG = "resources/skybox/right.jpg";
@@ -33,6 +36,7 @@ namespace utils {
         bool useDiffuseMap = true;
         bool useNormalMap = true;
         bool sunlight = false;
+        glm::vec3 sunlightDirection = glm::vec3(1, -1, 0);
         bool pauseBezierPath = false;
         bool pauseHierarchyTransform = false;
 
